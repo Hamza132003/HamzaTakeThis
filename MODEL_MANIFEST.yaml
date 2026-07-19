@@ -1,0 +1,61 @@
+# MODEL_MANIFEST.yaml — pinned model revisions.
+# Revisions below are the EXACT snapshots present in the local HF cache on 2026-07-19,
+# i.e. what the working pipeline has actually been validated against on this machine.
+# Phase 13 adds per-file SHA-256; until then `weight_hashes: pending`.
+# Loader code does not yet enforce these pins (Phase 4 adapter work); this file is the
+# source of truth new code must consume. Floating `main` is prohibited for new code.
+
+schema_version: 1
+pinned_at: "2026-07-19"
+hardware_validated_on: "NVIDIA GeForce RTX 5060 Laptop GPU (8 GB, sm_120), torch 2.11.0+cu128"
+
+models:
+  - repo_id: Systran/faster-whisper-large-v3
+    revision: edaa852ec7e145841d8ffdb056a99866b5f0a478
+    approx_size_gb: 3.1
+    weight_hashes: pending
+  - repo_id: facebook/nllb-200-distilled-1.3B
+    revision: 7be3e24664b38ce1cac29b8aeed6911aa0cf0576
+    approx_size_gb: 5.5
+    weight_hashes: pending
+  - repo_id: Qwen/Qwen3-4B-Instruct-2507
+    revision: cdbee75f17c01a7cc42f958dc650907174af0554
+    approx_size_gb: 8.1
+    weight_hashes: pending
+  - repo_id: speechbrain/sepformer-wham16k-enhancement
+    revision: 90b3c5c3ffe3e04387b566715ab5fff36ec7b9d9
+    approx_size_gb: 0.1
+    weight_hashes: pending
+  - repo_id: superb/wav2vec2-base-superb-er
+    revision: 441a7599c3b22107314dcbd9166621c5c83f2cc5
+    approx_size_gb: 0.4
+    weight_hashes: pending
+  - repo_id: alibabasglab/MossFormer2_SE_48K
+    revision: UNPINNED               # cache snapshot dir empty of revision marker;
+                                     # pin at next controlled acquisition (Phase 4/13)
+    approx_size_gb: 1.0
+    weight_hashes: pending
+  - repo_id: pyannote/speaker-diarization-community-1
+    revision: UNPINNED               # gated; acquired via operator token at runtime;
+                                     # pin requires operator-context listing (Phase 4/13)
+    approx_size_gb: 0.03
+    weight_hashes: pending
+
+planned_not_downloaded:
+  - name: Omnilingual ASR CTC 300M
+    source: https://dl.fbaipublicfiles.com/mms/omniASR-CTC-300M.pt   # reported by upstream repo
+    upstream: https://github.com/facebookresearch/omnilingual-asr
+    revision: TO_PIN_AT_ACQUISITION
+    reported_params: 325494996
+    reported_download_gib: 1.3
+    reported_license: Apache-2.0 (code and models, per upstream README 2026-07-19)
+    gated: false (reported)
+    hebrew_support: UNVERIFIED — must pass fail-closed check via
+      omnilingual_asr.models.wav2vec2_llama.lang_ids.supported_langs at adapter startup
+    persian_support: UNVERIFIED — same fail-closed check (fas/pes variants)
+    expected_vram_gb: "~1.5–2 (fp16/int8, sequential; estimate — measure at smoke test)"
+    windows_compatibility: UNVERIFIED (fairseq2 dependency chain — verify before install)
+    status: pending_operator_approval
+    approval_request_must_include: [exact name, exact revision/commit, exact size,
+      license text status, verified he, verified fa, disk/RAM/VRAM, install commands,
+      rollback instructions]

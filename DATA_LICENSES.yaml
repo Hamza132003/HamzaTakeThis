@@ -1,0 +1,31 @@
+# DATA_LICENSES.yaml — dataset license ledger.
+# NO dataset has been acquired. Every entry is a CANDIDATE pending legal review and
+# operator approval (see docs/DATA_LICENSE_MATRIX.md for the governing rules).
+# A dataset may not be used until its entry carries: license_verified: true,
+# operator_approved: true, and a content hash.
+
+schema_version: 1
+acquired: []          # nothing acquired as of 2026-07-19
+
+candidates:
+  hebrew:
+    - {name: ivrit.ai corpora,      license: custom per release, verified: false}
+    - {name: HebDB,                 license: research release,    verified: false}
+    - {name: VoxKnesset,            license: per publication,     verified: false}
+    - {name: Common Voice (he),     license: CC0,                 verified: false}
+    - {name: FLEURS (he),           license: CC-BY-4.0,           verified: false}
+  persian:
+    - {name: PSRB public subset,    license: research benchmark,  verified: false}
+    - {name: Common Voice (fa),     license: CC0,                 verified: false}
+    - {name: FLEURS (fa),           license: CC-BY-4.0,           verified: false}
+  degraded_channel:
+    - {name: LDC RATS (fa partitions), license: LDC fee/membership, verified: false,
+       note: operator procurement required}
+    - {name: SPINE / public-safety radio, license: LDC/varied, verified: false,
+       note: channel robustness only — never counted toward he/fa accuracy}
+    - {name: synthetic degradation recipes, license: inherits sources, verified: false,
+       note: augmented copies never counted as independent sources}
+
+prohibited: private, intercepted, classified, or otherwise unauthorized audio — including
+  for tests. Personal recordings on the dev machine are never committed and never enter
+  evaluation sets without owner consent and documentation.

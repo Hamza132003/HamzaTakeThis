@@ -1,0 +1,132 @@
+# MODEL_LICENSES.yaml — per-model license record (code and weights SEPARATE).
+# verification: verified_local | known_reverify_at_pin | unverified
+# Machine-readable companion to docs/MODEL_LICENSE_MATRIX.md. No entry here is a
+# license acceptance; gated models remain the operator's action.
+
+schema_version: 1
+
+models:
+  faster_whisper_large_v3:
+    repo_id: Systran/faster-whisper-large-v3
+    code_license: MIT            # faster-whisper / CTranslate2
+    weight_license: MIT
+    gated: false
+    commercial_use: yes
+    verification: known_reverify_at_pin
+    enabled: true
+
+  clearvoice_mossformer2_se_48k:
+    repo_id: alibabasglab/MossFormer2_SE_48K
+    code_license: Apache-2.0     # ClearVoice
+    weight_license: UNVERIFIED   # confirm per-checkpoint at pinned revision
+    gated: false
+    commercial_use: unknown
+    verification: unverified
+    enabled: true
+
+  clearvoice_mossformer2_ss_16k:
+    repo_id: alibabasglab/MossFormer2_SS_16K
+    code_license: Apache-2.0
+    weight_license: UNVERIFIED
+    gated: false
+    commercial_use: unknown
+    verification: unverified
+    enabled: true
+
+  pyannote_diarization_community_1:
+    repo_id: pyannote/speaker-diarization-community-1
+    code_license: MIT            # pyannote.audio
+    weight_license: MIT (HF gating / user agreement applies)
+    gated: true                  # operator holds the token; never stored in git
+    commercial_use: yes per license; gating terms apply
+    verification: known_reverify_at_pin
+    enabled: true
+
+  nllb_200_distilled_1_3b:
+    repo_id: facebook/nllb-200-distilled-1.3B
+    code_license: Apache-2.0     # transformers
+    weight_license: CC-BY-NC-4.0
+    gated: false
+    commercial_use: no           # NON-COMMERCIAL ONLY — operator decision 2026-07-19:
+                                 # kept for local research/hackathon evaluation; never
+                                 # describe as commercially deployable (RELEASE_BLOCKED.md)
+    verification: known_reverify_at_pin
+    enabled: true
+    license_gate: research_and_local_evaluation_only
+
+  nllb_200_distilled_600m:
+    repo_id: facebook/nllb-200-distilled-600M
+    code_license: Apache-2.0
+    weight_license: CC-BY-NC-4.0
+    gated: false
+    commercial_use: no
+    verification: known_reverify_at_pin
+    enabled: true                # fallback path of the same gated stage
+    license_gate: research_and_local_evaluation_only
+
+  panns_cnn14:
+    repo_id: (checkpoints fetched by panns_inference to ~/panns_data)
+    code_license: MIT
+    weight_license: UNVERIFIED
+    gated: false
+    commercial_use: unknown
+    verification: unverified
+    enabled: true
+    note: package fetches labels over plain HTTP; Phase 13 replaces acquisition path
+
+  speechbrain_sepformer_wham16k:
+    repo_id: speechbrain/sepformer-wham16k-enhancement
+    code_license: Apache-2.0
+    weight_license: Apache-2.0
+    gated: false
+    commercial_use: yes
+    verification: known_reverify_at_pin
+    enabled: true                # fallback only
+
+  speechbrain_ecapa_voxceleb:
+    repo_id: speechbrain/spkrec-ecapa-voxceleb
+    code_license: Apache-2.0
+    weight_license: Apache-2.0 (VoxCeleb training-data terms worth legal review)
+    gated: false
+    commercial_use: yes (dataset caveat)
+    verification: known_reverify_at_pin
+    enabled: true
+
+  superb_wav2vec2_emotion:
+    repo_id: superb/wav2vec2-base-superb-er
+    code_license: Apache-2.0
+    weight_license: Apache-2.0
+    gated: false
+    commercial_use: yes
+    verification: known_reverify_at_pin
+    enabled: true                # scientific-validity concern (defect 3.11), not license;
+                                 # default-off change scheduled Phase 9
+
+  qwen3_4b_instruct:
+    repo_id: Qwen/Qwen3-4B-Instruct-2507
+    code_license: Apache-2.0
+    weight_license: Apache-2.0
+    gated: false
+    commercial_use: yes
+    verification: known_reverify_at_pin
+    enabled: true
+
+  silero_vad_bundled:
+    repo_id: (bundled inside faster-whisper)
+    code_license: MIT
+    weight_license: MIT
+    gated: false
+    commercial_use: yes
+    verification: known_reverify_at_pin
+    enabled: true
+
+  # ---- planned, NOT downloaded ------------------------------------------------
+  omnilingual_asr_ctc_300m:
+    repo_id: facebookresearch/omnilingual-asr (checkpoint omniASR-CTC-300M.pt via dl.fbaipublicfiles.com)
+    code_license: Apache-2.0 (reported by upstream README, 2026-07-19)
+    weight_license: Apache-2.0 (reported by upstream README; re-verify at acquisition)
+    gated: false (reported)
+    commercial_use: reported yes — verify before enablement
+    verification: unverified
+    enabled: false
+    status: pending_operator_approval   # binding decision 4: no download in Phase 0
