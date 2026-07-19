@@ -3,12 +3,14 @@
 # must be installed from https://download.pytorch.org/whl/cu128 (see setup.ps1).
 # Dev tools (pytest/ruff/mypy) included. Upgrade path to hash-pinned locks
 # (pip-tools/uv) is recorded in docs/IMPLEMENTATION_PLAN.md Phase 0 notes.
+# Refreshed in Phase 1: adds pydantic (ingest contracts).
 accelerate==1.14.0
 aiohappyeyeballs==2.7.1
 aiohttp==3.14.1
 aiosignal==1.4.0
 alembic==1.18.5
 annotated-doc==0.0.4
+annotated-types==0.7.0
 antlr4-python3-runtime==4.9.3
 anyio==4.14.2
 ast_serialize==0.6.0
@@ -97,6 +99,8 @@ pyannote.database==5.1.3
 pyannote.metrics==3.2.1
 pyannote.pipeline==3.0.1
 pycparser==3.0
+pydantic==2.13.4
+pydantic_core==2.46.4
 pydub==0.25.1
 Pygments==2.20.0
 pyloudnorm==0.2.0
@@ -148,6 +152,7 @@ tqdm==4.69.0
 transformers==5.14.1
 truststore==0.10.4
 typer==0.27.0
+typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2026.3
 urllib3==2.7.0

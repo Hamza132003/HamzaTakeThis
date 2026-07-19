@@ -52,3 +52,6 @@ accelerate>=1.0
 torchao==0.8.0          # int8 GPU quantization (pin: newer needs torch>=2.11)
 # bitsandbytes          # alternative 4-bit; its wheel is blocked on some
 #                       # corporate networks — torchao covers the same need
+
+# AEGIS-X Phase 1: typed ingest contracts
+pydantic>=2.7
