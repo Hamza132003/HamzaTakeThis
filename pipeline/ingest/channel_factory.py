@@ -60,13 +60,18 @@ def _decode_native(src: Path, tmp_wav: Path) -> None:
 
 
 def _write_track(path: Path, data: np.ndarray, sr: int) -> tuple[str, int]:
-    """Atomic float32 WAV write → (sha256, byte_size)."""
+    """Atomic float32 WAV write → (sha256, byte_size).
+
+    scipy.io.wavfile (not soundfile) on purpose: libsndfile embeds a PEAK
+    chunk in float WAVs whose fields include a WALL-CLOCK TIMESTAMP, which
+    makes byte hashes time-dependent. scipy writes a minimal deterministic
+    RIFF header (WAVE_FORMAT_IEEE_FLOAT), so identical samples always yield
+    identical bytes — required for reproducible artifact hashing."""
     import io
 
-    import soundfile as sf
+    from scipy.io import wavfile
     buf = io.BytesIO()
-    sf.write(buf, np.asarray(data, dtype=np.float32), sr,
-             format="WAV", subtype="FLOAT")
+    wavfile.write(buf, sr, np.asarray(data, dtype=np.float32))
     payload = buf.getvalue()
     from pipeline.ingest.immutable import atomic_write_bytes
     sha = atomic_write_bytes(path, payload)
