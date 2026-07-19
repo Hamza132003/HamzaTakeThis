@@ -24,7 +24,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .utils import log, free_cuda
+from .utils import log, free_cuda, check_cancel, JobCancelled
 
 SR = 16000
 WHISPER_KEY = "whisper"   # ModelManager cache key (runner evicts before NLLB)
@@ -101,6 +101,8 @@ def transcribe(audio_wavs, diar_segments: list, cfg: dict, device: str,
             + (f" ({n_flag} flagged low-confidence)" if n_flag else "") + ".")
         return results
 
+    except JobCancelled:
+        raise
     except Exception as e:
         log(f"WARNING: transcription failed ({e}).")
         return []
@@ -151,6 +153,8 @@ def _detect_language(model, y, cfg: dict, clip_ts) -> list:
         if detected in candidates and prob >= 0.5:
             log(f"Language auto-detected: {detected} (p={prob:.2f})")
             return [detected]
+    except JobCancelled:
+        raise
     except Exception as e:
         log(f"  (language detection failed: {e})")
     return candidates
@@ -177,7 +181,13 @@ def _whisper(model, y, language, task, vad, cfg, clip_ts=None):
     if clip_ts:
         kwargs["clip_timestamps"] = clip_ts
     segs, info = model.transcribe(y, **kwargs)
-    return list(segs), info
+    # faster-whisper decodes lazily as the generator is consumed, so a
+    # per-segment cancel check here interrupts the actual decode work.
+    out = []
+    for s in segs:
+        check_cancel()
+        out.append(s)
+    return out, info
 
 
 def _is_junk(text: str) -> bool:
@@ -233,6 +243,8 @@ def _decode_task(model, y, language, task, cfg, clip_ts=None):
             segs, _ = _whisper(model, y, language, task, False, cfg, clip_ts)
             clean = _clean(segs, cfg)
         return clean
+    except JobCancelled:
+        raise
     except Exception as e:
         log(f"  ({task} pass failed: {e})")
         return []

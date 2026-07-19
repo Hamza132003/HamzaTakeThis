@@ -15,6 +15,12 @@ export const api = {
     }).then(okOrThrow),
   record: (formData) =>
     fetch('/api/record', { method: 'POST', body: formData }).then(okOrThrow),
+  browseFolder: () =>
+    fetch('/api/browse-folder', { method: 'POST' }).then(okOrThrow),
+  cancel: () =>
+    fetch('/api/cancel', { method: 'POST' }).then(okOrThrow),
+  deleteRecording: (name) =>
+    fetch(`/api/recording/${encodeURIComponent(name)}`, { method: 'DELETE' }).then(okOrThrow),
   status: () => fetch('/api/status').then(j),
   recordings: () => fetch('/api/recordings').then(j),
   recording: (name) => fetch(`/api/recording/${encodeURIComponent(name)}`).then(j),

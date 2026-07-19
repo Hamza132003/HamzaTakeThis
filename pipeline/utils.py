@@ -27,6 +27,30 @@ except Exception:
 
 _sb_patched = False
 
+# ------------------------------------------------------------- cancellation
+# A process-wide cancel hook so long-running stages (Whisper decode loops,
+# NLLB batches) can abort mid-stage without threading a callback through
+# every function signature. Only one job runs at a time (webapp serializes
+# them), so a single global is safe.
+_cancel_check = None
+
+
+class JobCancelled(Exception):
+    """Raised from check_cancel() when the caller requested cancellation."""
+
+
+def set_cancel_check(fn) -> None:
+    """Install (or clear, with None) the job-wide cancellation probe."""
+    global _cancel_check
+    _cancel_check = fn
+
+
+def check_cancel() -> None:
+    """Raise JobCancelled if the current job has been asked to stop.
+    Broad `except Exception` handlers must re-raise this explicitly."""
+    if _cancel_check is not None and _cancel_check():
+        raise JobCancelled()
+
 
 def guard_speechbrain_lazy() -> None:
     """SpeechBrain exposes optional integrations (k2, wordemb, ...) as lazy

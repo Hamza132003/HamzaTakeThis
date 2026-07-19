@@ -109,6 +109,16 @@ input.txt, select {
   border-radius: 11px; padding: 13px 14px; font-size: 15px; width: 100%;
   transition: border-color .2s, box-shadow .2s;
 }
+.row-inline { display: flex; gap: 8px; }
+.row-inline input.txt { flex: 1; }
+.btn-secondary {
+  border: 1px solid var(--glass-brd); background: rgba(8,12,20,.55);
+  color: var(--muted); font-size: 14px; font-weight: 700;
+  padding: 0 18px; border-radius: 11px; cursor: pointer; white-space: nowrap;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.btn-secondary:hover { color: var(--teal); border-color: rgba(53,210,203,.45); background: rgba(53,210,203,.10); }
+.btn-secondary:disabled { opacity: .55; cursor: not-allowed; }
 input.txt:focus, select:focus {
   outline: none; border-color: var(--teal);
   box-shadow: 0 0 0 3px rgba(53,210,203,.18);
@@ -200,6 +210,15 @@ input.txt:focus, select:focus {
   transition: transform .2s ease, border-color .2s ease; }
 .card:hover { transform: translateY(-5px); border-color: rgba(53,210,203,.5); }
 .card .thumb { height: 120px; background: #0b101b center/cover no-repeat; border-bottom: 1px solid var(--glass-brd); }
+.card-delete {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid rgba(231,138,123,.4); background: rgba(8,12,20,.75);
+  color: #e78a7b; font-size: 13px; font-weight: 700; line-height: 1;
+  cursor: pointer; opacity: 0; transition: opacity .15s, background .15s;
+}
+.card:hover .card-delete { opacity: 1; }
+.card-delete:hover { background: rgba(212,87,74,.25); border-color: #d4574a; }
 .card .body { padding: 15px 16px 17px; }
 .card h3 { margin: 0 0 10px; font-size: 15px; word-break: break-all; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }

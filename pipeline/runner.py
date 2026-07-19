@@ -15,7 +15,8 @@ from . import (audio, separation, noise_analysis, diarization, speakers,
                transcription, translation, emotion, summary, spectrogram,
                report)
 from .models import MANAGER
-from .utils import log, stage, free_cuda
+from .utils import (log, stage, free_cuda, set_cancel_check, check_cancel,
+                    JobCancelled)
 
 
 def _rel(p, out_dir: Path) -> str:
@@ -25,10 +26,15 @@ def _rel(p, out_dir: Path) -> str:
         return str(p)
 
 
-def process_file(input_path, cfg: dict, device: str, progress=None) -> dict:
+def process_file(input_path, cfg: dict, device: str, progress=None,
+                 should_cancel=None) -> dict:
     in_path = Path(input_path)
     out_dir = Path(cfg.get("output_dir", "outputs")) / in_path.stem
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Long stages (Whisper decode, NLLB batches) poll this via check_cancel(),
+    # so cancellation lands mid-stage, not just at stage boundaries.
+    set_cancel_check(should_cancel)
 
     steps = ["Extract audio", "Separate voice/noise", "Analyse noise",
              "Diarize", "Un-mix speakers", "Transcribe", "Translate",
@@ -36,6 +42,7 @@ def process_file(input_path, cfg: dict, device: str, progress=None) -> dict:
     total = len(steps)
 
     def tick(i, frac=0.0):
+        check_cancel()
         if progress:
             try:
                 progress(steps[i], i + 1, total, frac)
@@ -173,6 +180,7 @@ def process_file(input_path, cfg: dict, device: str, progress=None) -> dict:
             "noise": noise,
             "speech": segs,
             "audio": {
+                "original": _rel(au["hq_wav"], out_dir),
                 "voice": _rel(sep["voice"], out_dir),
                 "noise": _rel(sep["noise"], out_dir),
             },

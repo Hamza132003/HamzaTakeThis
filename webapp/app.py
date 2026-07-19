@@ -33,15 +33,16 @@ import yaml
 from flask import (Flask, Response, request, jsonify, send_from_directory,
                    abort)
 
-from pipeline.runner import process_file
-from pipeline.utils import resolve_device, log
+from pipeline.runner import process_file, JobCancelled
+from pipeline.utils import resolve_device, log, free_cuda
 
 DIST = ROOT / "webapp" / "frontend" / "dist"
 UPLOADS = ROOT / "uploads"
 app = Flask(__name__, static_folder=str(DIST), static_url_path="")
 
-MEDIA_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v",
-             ".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg", ".opus"}
+MEDIA_EXT = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v", ".mpeg", ".mpg",
+             ".wav", ".mp3", ".m4a", ".flac", ".aac", ".ogg", ".opus",
+             ".wma", ".aiff", ".aif", ".amr", ".3gp"}
 CONFIG_PATH = ROOT / "config.yaml"
 
 
@@ -57,7 +58,7 @@ def output_root() -> Path:
 # ------------------------------------------------------------------ job state
 JOB = {"running": False, "total": 0, "done": 0, "current": "", "stage": "",
        "step": 0, "steps": 0, "substep": 0.0, "log": [], "folder": "",
-       "version": 0}
+       "cancel_requested": False, "version": 0}
 LOCK = threading.Lock()
 
 
@@ -74,8 +75,16 @@ def _log(msg: str):
         JOB["version"] += 1
 
 
+def _cancel_requested() -> bool:
+    with LOCK:
+        return JOB["cancel_requested"]
+
+
 def _worker(files, cfg, device):
     for f in files:
+        if _cancel_requested():
+            _log("[cancelled] batch stopped before next file")
+            break
         _bump(current=Path(f).name)
         _log(f"> {Path(f).name}")
 
@@ -84,14 +93,28 @@ def _worker(files, cfg, device):
                   substep=round(float(frac), 3))
 
         try:
-            process_file(f, cfg, device, progress=progress)
+            process_file(f, cfg, device, progress=progress,
+                        should_cancel=_cancel_requested)
             _log(f"[ok] {Path(f).name}")
+        except JobCancelled:
+            _log(f"[cancelled] {Path(f).name}")
+            free_cuda()
+            break
         except Exception as e:
             _log(f"[fail] {Path(f).name}: {e}")
         with LOCK:
             JOB["done"] += 1
             JOB["version"] += 1
-    _bump(running=False, current="", stage="finished")
+    _bump(running=False, current="", stage="finished", cancel_requested=False)
+
+
+def _truthy(v) -> bool:
+    """Robust bool coercion: the JSON path (folder jobs) sends real
+    booleans, but the multipart path (mic recordings) round-trips
+    everything through FormData as strings, where bool("false") is True."""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() not in ("false", "0", "", "no")
 
 
 def _make_cfg(data: dict) -> tuple[dict, str]:
@@ -101,7 +124,9 @@ def _make_cfg(data: dict) -> tuple[dict, str]:
     if data.get("hf_token"):
         cfg.setdefault("diarization", {})["hf_token"] = str(data["hf_token"]).strip()
     if "separate_overlap" in data:
-        cfg.setdefault("speakers", {})["separate_overlap"] = bool(data["separate_overlap"])
+        cfg.setdefault("speakers", {})["separate_overlap"] = _truthy(data["separate_overlap"])
+    if "ai_summary" in data:
+        cfg.setdefault("summary", {})["enabled"] = _truthy(data["ai_summary"])
     device = resolve_device(data.get("device", cfg.get("device", "auto")))
     return cfg, device
 
@@ -110,7 +135,7 @@ def _start_job(files, cfg, device, folder=""):
     with LOCK:
         JOB.update(running=True, total=len(files), done=0, current="",
                    stage="", step=0, steps=0, substep=0.0, log=[],
-                   folder=folder)
+                   folder=folder, cancel_requested=False)
         JOB["version"] += 1
     threading.Thread(target=_worker, args=(files, cfg, device),
                      daemon=True).start()
@@ -160,12 +185,18 @@ def api_process():
     else:
         folder = str(data.get("folder", "")).strip().strip('"')
         fpath = Path(folder).expanduser()
-        if not fpath.is_dir():
-            return jsonify({"error": f"Not a folder: {folder or '(empty)'}"}), 400
-        files = sorted(str(p) for p in fpath.iterdir()
-                       if p.suffix.lower() in MEDIA_EXT)
-        if not files:
-            return jsonify({"error": f"No audio/video files found in {folder}"}), 400
+        if fpath.is_file():
+            if fpath.suffix.lower() not in MEDIA_EXT:
+                return jsonify({"error": f"Not a supported audio/video file: {folder}"}), 400
+            files = [str(fpath)]
+            folder = ""
+        elif fpath.is_dir():
+            files = sorted(str(p) for p in fpath.iterdir()
+                           if p.suffix.lower() in MEDIA_EXT)
+            if not files:
+                return jsonify({"error": f"No audio/video files found in {folder}"}), 400
+        else:
+            return jsonify({"error": f"Not a folder or file: {folder or '(empty)'}"}), 400
 
     cfg, device = _make_cfg(data)
     _start_job(files, cfg, device, folder)
@@ -204,6 +235,19 @@ def api_status():
         return jsonify(dict(JOB))
 
 
+@app.post("/api/cancel")
+def api_cancel():
+    """Best-effort cancel: takes effect at the next stage boundary (or
+    before the next file in a batch), not mid-inference."""
+    with LOCK:
+        if not JOB["running"]:
+            return jsonify({"error": "No job is running."}), 400
+        JOB["cancel_requested"] = True
+        JOB["version"] += 1
+    _log("Cancel requested…")
+    return jsonify({"cancelling": True})
+
+
 @app.get("/api/events")
 def api_events():
     """SSE stream: emits the job dict whenever it changes (500 ms checks)."""
@@ -230,6 +274,51 @@ def api_events():
                              "X-Accel-Buffering": "no"})
 
 
+_browse_lock = threading.Lock()
+
+
+@app.post("/api/browse-folder")
+def api_browse_folder():
+    """Open the native Windows folder picker on the server machine and
+    return the chosen path. Runs as a separate PowerShell/WinForms process
+    (not in-process Tkinter) so it reliably comes to the front and never
+    races with itself if the button is clicked more than once."""
+    import subprocess
+    if not _browse_lock.acquire(blocking=False):
+        return jsonify({"error": "A folder dialog is already open."}), 409
+    try:
+        # Repurposes the modern Explorer-style OpenFileDialog (WinForms' own
+        # FolderBrowserDialog is the old tree-view style). Recordings are
+        # visible and directly pickable; keeping the default "Select this
+        # folder" pseudo-filename and clicking Open returns the folder
+        # instead, so one dialog covers both cases.
+        exts = ";".join(f"*{e}" for e in sorted(MEDIA_EXT))
+        ps_script = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "$dlg = New-Object System.Windows.Forms.OpenFileDialog;"
+            "$dlg.ValidateNames = $false;"
+            "$dlg.CheckFileExists = $false;"
+            "$dlg.CheckPathExists = $true;"
+            "$dlg.FileName = 'Select this folder';"
+            "$dlg.Title = 'Pick a recording, or click Open to use the whole folder';"
+            f"$dlg.Filter = 'Audio & video|{exts}|All files|*.*';"
+            "$owner = New-Object System.Windows.Forms.Form -Property @{TopMost=$true};"
+            "if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) "
+            "{ if (Test-Path -LiteralPath $dlg.FileName -PathType Leaf) "
+            "{ Write-Output $dlg.FileName } else { Split-Path $dlg.FileName -Parent } }"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-STA", "-Command", ps_script],
+            capture_output=True, text=True, timeout=300,
+        )
+        path = result.stdout.strip()
+        return jsonify({"folder": path})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Folder dialog timed out."}), 504
+    finally:
+        _browse_lock.release()
+
+
 @app.get("/api/recordings")
 def api_recordings():
     return jsonify(list_recordings())
@@ -241,6 +330,20 @@ def api_recording(name):
     if not rj.exists():
         abort(404)
     return jsonify(json.loads(rj.read_text(encoding="utf-8")))
+
+
+@app.delete("/api/recording/<name>")
+def api_delete_recording(name):
+    """Permanently remove one processed result's output folder."""
+    root = output_root()
+    if not name or "/" in name or "\\" in name or name in (".", ".."):
+        abort(400)
+    target = root / name
+    if not target.is_dir() or target.resolve().parent != root:
+        abort(404)
+    import shutil
+    shutil.rmtree(target)
+    return jsonify({"deleted": name})
 
 
 @app.get("/media/<name>/<path:relpath>")
@@ -256,7 +359,40 @@ def index():
     return send_from_directory(str(DIST), "index.html")
 
 
+class _Tee:
+    """Mirror a stream into the server log so output survives a crash or a
+    closed console window."""
+    def __init__(self, *streams):
+        self._streams = streams
+
+    def write(self, s):
+        for st in self._streams:
+            try:
+                st.write(s)
+            except Exception:
+                pass
+        return len(s)
+
+    def flush(self):
+        for st in self._streams:
+            try:
+                st.flush()
+            except Exception:
+                pass
+
+    def __getattr__(self, name):
+        return getattr(self._streams[0], name)
+
+
 def main():
+    logf = open(ROOT / "server.log", "a", encoding="utf-8",
+                errors="replace", buffering=1)
+    import faulthandler
+    faulthandler.enable(file=logf)      # captures hard native crashes too
+    sys.stdout = _Tee(sys.stdout, logf)
+    sys.stderr = _Tee(sys.stderr, logf)
+    log(f"--- server start {time.strftime('%Y-%m-%d %H:%M:%S')} ---")
+
     url = "http://127.0.0.1:5000"
     log(f"Dashboard: {url}")
     try:

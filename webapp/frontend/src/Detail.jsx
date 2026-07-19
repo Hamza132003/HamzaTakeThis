@@ -222,6 +222,7 @@ export default function Detail({ name, onBack }) {
       <div className="glass">
         <p className="eyebrow">Waveforms, spectrograms &amp; isolated audio</p>
         <SpecBlock name={name} rel={specs.original} waveRel={waves.original}
+          audioRel={r.audio?.original || 'audio_48k_mono.wav'}
           label="Original — voice + noise mixed" />
         <SpecBlock name={name} rel={specs.voice} waveRel={waves.voice}
           audioRel={r.audio?.voice} label="Isolated voice" audioRef={voiceAudioRef} />

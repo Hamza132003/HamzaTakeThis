@@ -11,7 +11,8 @@ CPU on failure. Segments are batched through the tokenizer/generate.
 """
 from __future__ import annotations
 
-from .utils import log, free_cuda, guard_speechbrain_lazy
+from .utils import (log, free_cuda, guard_speechbrain_lazy, check_cancel,
+                    JobCancelled)
 
 # Whisper language code -> NLLB (FLORES-200) code
 NLLB_SRC = {
@@ -64,6 +65,7 @@ def translate_segments(segments: list, cfg: dict, device: str,
             todo.append((seg, src, text))
 
         for i in range(0, len(todo), batch_size):
+            check_cancel()
             chunk = todo[i:i + batch_size]
             # Split further if the batch mixes source languages.
             by_src = {}
@@ -78,6 +80,8 @@ def translate_segments(segments: list, cfg: dict, device: str,
             f"{'english pivot' if use_pivot else 'native source'}].")
         return segments
 
+    except JobCancelled:
+        raise
     except Exception as e:
         log(f"WARNING: translation failed ({e}).")
         for seg in segments:

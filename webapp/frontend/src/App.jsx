@@ -34,9 +34,11 @@ function InputPanel({ onStarted, disabled }) {
   const [device, setDevice] = useState('auto')
   const [token, setToken] = useState('')
   const [overlap, setOverlap] = useState(true)
+  const [aiSummary, setAiSummary] = useState(false)
   const [error, setError] = useState('')
+  const [browsing, setBrowsing] = useState(false)
 
-  const shared = { language, device, hf_token: token, separate_overlap: overlap }
+  const shared = { language, device, hf_token: token, separate_overlap: overlap, ai_summary: aiSummary }
 
   const submitFolder = async () => {
     setError('')
@@ -45,6 +47,20 @@ function InputPanel({ onStarted, disabled }) {
       onStarted()
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  const browseFolder = async () => {
+    if (browsing) return
+    setError('')
+    setBrowsing(true)
+    try {
+      const { folder: picked } = await api.browseFolder()
+      if (picked) setFolder(picked)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBrowsing(false)
     }
   }
 
@@ -59,10 +75,15 @@ function InputPanel({ onStarted, disabled }) {
         <>
           {error && <div className="error">{error}</div>}
           <div className="field">
-            <label>Folder containing your recordings</label>
-            <input className="txt mono" value={folder} onChange={(e) => setFolder(e.target.value)}
-              placeholder="C:\Users\Waleed.Alawneh\Recordings" />
-            <span className="hint">Every audio/video file in this folder is processed in one batch.</span>
+            <label>Folder (or a single file) of recordings</label>
+            <div className="row-inline">
+              <input className="txt mono" value={folder} onChange={(e) => setFolder(e.target.value)}
+                placeholder="Paste a folder or file path here" />
+              <button type="button" className="btn-secondary" onClick={browseFolder} disabled={browsing}>
+                {browsing ? 'Waiting for dialog…' : 'Browse…'}
+              </button>
+            </div>
+            <span className="hint">Point at a folder to batch-process every audio/video file in it, or a single file to process just that one.</span>
           </div>
         </>
       )}
@@ -87,15 +108,19 @@ function InputPanel({ onStarted, disabled }) {
 
       {tab === 'folder' ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginTop: 6 }}>
-          <Switch on={overlap} onChange={setOverlap} label="Un-mix overlapping speech" />
+          <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <Switch on={overlap} onChange={setOverlap} label="Un-mix overlapping speech" />
+            <Switch on={aiSummary} onChange={setAiSummary} label="AI summary (slower)" />
+          </div>
           <button className="btn" onClick={submitFolder} disabled={disabled}>
             {disabled ? 'Working…' : 'Process folder'}
           </button>
         </div>
       ) : (
         <>
-          <div style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14, display: 'flex', gap: 20, flexWrap: 'wrap' }}>
             <Switch on={overlap} onChange={setOverlap} label="Un-mix overlapping speech" />
+            <Switch on={aiSummary} onChange={setAiSummary} label="AI summary (slower)" />
           </div>
           <Recorder options={shared} onStarted={onStarted} disabled={disabled} />
         </>
@@ -105,9 +130,17 @@ function InputPanel({ onStarted, disabled }) {
 }
 
 function Progress({ job }) {
+  const [cancelling, setCancelling] = useState(false)
   const stageFrac = job.steps ? (job.step - 1 + (job.substep || 0)) / job.steps : 0
   const frac = job.total ? (job.done + stageFrac) / job.total : 0
   const pct = Math.max(0, Math.min(100, Math.round(frac * 100)))
+
+  const cancel = async () => {
+    if (cancelling || !window.confirm('Cancel the current job?')) return
+    setCancelling(true)
+    try { await api.cancel() } catch { /* job may have just finished */ }
+  }
+
   return (
     <div className="glass fade-in">
       <div className="prog-head">
@@ -118,7 +151,13 @@ function Progress({ job }) {
             {job.stage} · {job.done} / {job.total} files
           </div>
         </div>
-        <div className="ring" style={{ '--p': pct }}><i>{pct}%</i></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div className="ring" style={{ '--p': pct }}><i>{pct}%</i></div>
+          <button type="button" className="btn-secondary" onClick={cancel}
+            disabled={cancelling || job.cancel_requested}>
+            {cancelling || job.cancel_requested ? 'Cancelling…' : 'Cancel'}
+          </button>
+        </div>
       </div>
       <div className="bar"><i style={{ width: pct + '%' }} /></div>
       {job.log?.length > 0 && <div className="joblog mono">{job.log.join('\n')}</div>}
@@ -126,9 +165,16 @@ function Progress({ job }) {
   )
 }
 
-function Card({ rec, onOpen }) {
+function Card({ rec, onOpen, onDelete }) {
+  const del = (e) => {
+    e.stopPropagation()
+    if (window.confirm(`Delete the result for "${rec.filename}"? This can't be undone.`)) {
+      onDelete(rec.name)
+    }
+  }
   return (
     <div className="card fade-in" onClick={() => onOpen(rec.name)}>
+      <button type="button" className="card-delete" title="Delete this result" onClick={del}>✕</button>
       <div className="thumb" style={{
         backgroundImage: rec.thumb ? `url(${media(rec.name, rec.thumb)})` : 'none',
       }} />
@@ -199,6 +245,15 @@ export default function App() {
 
   const onStarted = useCallback(() => { api.status().then(applyJob).catch(() => {}) }, [applyJob])
 
+  const onDelete = useCallback(async (name) => {
+    try {
+      await api.deleteRecording(name)
+      loadRecordings()
+    } catch (e) {
+      alert(`Delete failed: ${e.message}`)
+    }
+  }, [loadRecordings])
+
   return (
     <div className="shell">
       <div className="topbar">
@@ -233,7 +288,7 @@ export default function App() {
               <p className="hint">No recordings processed yet. Point at a folder or record with the microphone above.</p>
             ) : (
               <div className="gallery">
-                {recordings.map((r) => <Card key={r.name} rec={r} onOpen={(name) => setView({ type: 'detail', name })} />)}
+                {recordings.map((r) => <Card key={r.name} rec={r} onDelete={onDelete} onOpen={(name) => setView({ type: 'detail', name })} />)}
               </div>
             )}
           </div>
