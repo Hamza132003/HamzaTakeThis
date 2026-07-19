@@ -1,4 +1,14 @@
-"""Stage 1: pull audio out of the video and normalise it.
+"""Stage 1: audio extraction — legacy behavior + AEGIS Phase 1 ingest façade.
+
+`extract_audio` is preserved as a compatibility façade: it produces the exact
+legacy artifacts (mono 16 kHz + mono 48 kHz pcm_s16le WAVs, same ffmpeg
+commands, same filenames, same returned keys) so every downstream stage and
+the dashboard work unchanged — and additionally runs the Phase 1 ingest
+(immutable hashing, media probe, per-channel/mid/side preservation,
+condition-vector diagnostics), writing `ingest_manifest.json` next to the
+legacy files. Ingest failures degrade with a logged warning and a
+`ingest_manifest` of None; they never break the legacy path. Disable via
+config `ingest.enabled: false`.
 
 Uses the ffmpeg binary bundled with imageio-ffmpeg, so no system ffmpeg
 install is required.
@@ -20,9 +30,10 @@ def _ffmpeg_exe() -> str:
         return "ffmpeg"
 
 
-def extract_audio(input_path: Path, out_dir: Path, sample_rate: int,
-                  hq_sample_rate: int = 48000) -> dict:
-    """Extract two WAVs from the input:
+def extract_audio_legacy(input_path: Path, out_dir: Path, sample_rate: int,
+                         hq_sample_rate: int = 48000) -> dict:
+    """The UNCHANGED legacy extraction (byte-identical commands and outputs
+    to the Phase 0 checkpoint):
 
     - work_wav:  mono @ sample_rate (16k) for the speech models
     - hq_wav:    mono @ hq_sample_rate (48k) for full-band enhancement
@@ -50,6 +61,36 @@ def extract_audio(input_path: Path, out_dir: Path, sample_rate: int,
 
     log(f"Extracted audio → {work_wav.name}, {hq_wav.name}")
     return {"work_wav": work_wav, "hq_wav": hq_wav}
+
+
+def extract_audio(input_path: Path, out_dir: Path, sample_rate: int,
+                  hq_sample_rate: int = 48000, cfg: dict | None = None) -> dict:
+    """Compatibility façade: legacy outputs + additive Phase 1 ingest.
+
+    Returned dict keeps the legacy keys ('work_wav', 'hq_wav') that every
+    downstream consumer expects, plus 'ingest_manifest' (IngestManifest or
+    None) for new-code access to channel assets and diagnostics.
+    """
+    out = extract_audio_legacy(input_path, out_dir, sample_rate, hq_sample_rate)
+
+    ingest_cfg = (cfg or {}).get("ingest", {}) if cfg else {}
+    manifest = None
+    if ingest_cfg.get("enabled", True):
+        try:
+            from pipeline.ingest.ingest import ingest_file
+            manifest = ingest_file(Path(input_path), Path(out_dir), cfg)
+            n_assets = len(manifest.derived)
+            n_cond = len(manifest.condition_vector.conditions) \
+                if manifest.condition_vector else 0
+            log(f"Ingest: {n_assets} channel asset(s), {n_cond} condition "
+                f"check(s) → ingest_manifest.json"
+                + (f" [duplicate of {manifest.source.duplicate_of}]"
+                   if manifest.source.duplicate_of else ""))
+        except Exception as e:
+            log(f"WARNING: Phase 1 ingest failed ({e}); legacy outputs intact.")
+
+    out["ingest_manifest"] = manifest
+    return out
 
 
 def duration_seconds(wav_path: Path) -> float:

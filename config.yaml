@@ -22,6 +22,16 @@ storage:
   artifact_dir: null
 
 # ------------------------------------------------------------
+# AEGIS-X Phase 1: immutable ingest (additive; legacy outputs unchanged)
+# ------------------------------------------------------------
+# Hashes the source (SHA-256/512), probes media metadata, preserves every
+# source channel (+ mid/side for stereo) as float32 PCM under
+# outputs/<name>/ingest/, runs deterministic signal diagnostics, and writes
+# ingest_manifest.json. Disable to run exactly the legacy extraction only.
+ingest:
+  enabled: true
+
+# ------------------------------------------------------------
 # Stage 1: audio extraction
 # ------------------------------------------------------------
 audio:

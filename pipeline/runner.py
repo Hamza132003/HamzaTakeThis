@@ -56,7 +56,8 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
     with stage("Extract audio"):
         au = audio.extract_audio(in_path, out_dir,
                                  cfg["audio"]["sample_rate"],
-                                 cfg["audio"].get("hq_sample_rate", 48000))
+                                 cfg["audio"].get("hq_sample_rate", 48000),
+                                 cfg=cfg)
         dur = audio.duration_seconds(au["work_wav"])
 
     # 2. separation (48 kHz enhancement; also emits voice_16k.wav)
