@@ -1,0 +1,41 @@
+# AEGIS-X PRIME CI — Phase 0.
+# Hard rule: NO model weights are downloaded in CI (spec §6.12). Only pip
+# packages are installed, and only the light set needed for lint/type/unit.
+# Heavy-import tests carry the `heavy` marker and run locally instead.
+
+name: ci
+on:
+  push:
+    branches: [feature/aegis-x-prime, main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install light toolchain (no model weights, no torch)
+        run: pip install pytest ruff mypy numpy pyyaml
+      - name: Lint (new code only)
+        run: ruff check aegis tools tests pipeline/asr
+      - name: Type check (new code only)
+        run: mypy
+      - name: Unit tests (light subset)
+        run: pytest -m "not heavy" -q
+      - name: Secret scan
+        run: python tools/secret_scan.py
+
+  release-gate:
+    runs-on: ubuntu-latest
+    continue-on-error: true   # expected to FAIL while the license decision is deferred;
+                              # visible status keeps the block explicit (RELEASE_BLOCKED.md)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Release gate (expected BLOCKED)
+        run: python tools/release_gate.py

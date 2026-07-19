@@ -1,0 +1,24 @@
+# Tool configuration only. Packaging metadata is deliberately absent:
+# release/redistribution is blocked (RELEASE_BLOCKED.md, license deferred).
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+# Phase 0 policy: lint is enforced on NEW code only (aegis/, tools/, tests/,
+# pipeline/asr/). Legacy modules are linted when each is refactored in its phase.
+
+[tool.mypy]
+python_version = "3.12"
+files = ["aegis", "tools", "pipeline/asr"]
+ignore_missing_imports = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "heavy: imports the full runtime stack (torch/librosa/flask); skipped in light CI",
+]
