@@ -31,3 +31,10 @@ image.png
 setup_log.txt
 *.whl
 server.log
+
+# --- test/tooling caches & local stores ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+test_input/
+store/

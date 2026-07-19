@@ -10,6 +10,18 @@ device: auto
 output_dir: outputs
 
 # ------------------------------------------------------------
+# Storage (AEGIS-X Phase 12 — declared now, unused in Phase 0)
+# ------------------------------------------------------------
+# The future content-addressed artifact store and job database MUST live on a
+# local NON-SYNCED path: this repository currently sits inside OneDrive, and
+# SQLite WAL files + large artifacts do not survive sync interference (risk
+# R-8, see docs/RISK_REGISTER.md and PRIVACY.md).
+# Recommended: C:\aegis-store   (or %LOCALAPPDATA%\AegisXPrime\store)
+# null = feature disabled; nothing is created inside the synced tree.
+storage:
+  artifact_dir: null
+
+# ------------------------------------------------------------
 # Stage 1: audio extraction
 # ------------------------------------------------------------
 audio:

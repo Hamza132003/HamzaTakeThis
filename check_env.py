@@ -39,12 +39,23 @@ def main() -> None:
     print("-" * 40)
     print(f"{ok}/{len(CHECKS)} components available.")
 
-    # GPU status
+    # GPU status + torch-build compatibility (fails loudly on mismatch: a build
+    # without this GPU's arch reports cuda "available" but no kernel can run).
     try:
         import torch
         if torch.cuda.is_available():
             print(f"GPU: {torch.cuda.get_device_name(0)} "
                   f"({torch.cuda.get_device_properties(0).total_memory // (1024**2)} MB)")
+            try:
+                from aegis.gpu import check_torch_cuda
+                probe = check_torch_cuda()
+                status = "OK" if probe["compatible"] else "FAIL"
+                print(f"GPU/torch compatibility: [{status}] {probe['reason']}")
+                if not probe["compatible"]:
+                    print("  → Do NOT run the pipeline. See docs/HARDWARE_SETUP.md "
+                          "or run: python -m aegis doctor")
+            except ImportError:
+                pass
         else:
             print("GPU: not available (will run on CPU).")
     except Exception:

@@ -124,15 +124,35 @@ def stage(name: str):
 
 
 def resolve_device(pref: str = "auto") -> str:
-    """Return 'cuda' or 'cpu' based on preference and availability."""
+    """Return 'cuda' or 'cpu' based on preference and availability.
+
+    Fails LOUDLY when a CUDA device is present but the installed torch build
+    cannot execute kernels on it (e.g. cu124 build on an sm_120 RTX 50-series).
+    torch.cuda.is_available() still returns True in that state, and previously
+    every GPU stage crashed into its fallback chain, presenting degraded output
+    as a successful GPU run. Pass --device cpu for a deliberate CPU run.
+    """
     if pref == "cpu":
         return "cpu"
     try:
         import torch
-        if torch.cuda.is_available():
-            return "cuda"
+        cuda_ok = torch.cuda.is_available()
     except Exception:
-        pass
+        cuda_ok = False
+    if cuda_ok:
+        try:
+            from aegis.gpu import check_torch_cuda
+            probe = check_torch_cuda()
+        except ImportError:
+            log("WARNING: aegis.gpu probe unavailable; skipping GPU-compat check.")
+            probe = {"compatible": True, "reason": "probe unavailable"}
+        if not probe["compatible"]:
+            raise RuntimeError(
+                f"GPU/torch mismatch: {probe['reason']}. "
+                f"Install a compatible build (see docs/HARDWARE_SETUP.md or run "
+                f"'python -m aegis doctor'), or pass --device cpu to run on CPU "
+                f"deliberately.")
+        return "cuda"
     if pref == "cuda":
         log("WARNING: cuda requested but not available; falling back to cpu.")
     return "cpu"

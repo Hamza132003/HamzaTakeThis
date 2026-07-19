@@ -1,9 +1,18 @@
-# Voice Isolator - one-time setup (Windows PowerShell)
+# Voice Isolator / AEGIS-X PRIME - one-time setup (Windows PowerShell)
 # Creates an isolated virtual environment and installs everything locally.
+#
+# GPU default: pinned PyTorch cu128 build (validated on the RTX 5060 Laptop GPU,
+# compute capability sm_120). The previous cu124 default CANNOT execute kernels
+# on sm_120 hardware and failed silently — see docs/HARDWARE_SETUP.md for how to
+# pick the right wheel on a different machine.
+#
+# CPU-only machines:  ./setup.ps1 -Cpu
 #
 # IMPORTANT: builds the venv from a standard (GIL) CPython 3.11/3.12.
 # A free-threaded (no-GIL) Python 3.13/3.14 will NOT work - torch and most
 # ML wheels have no free-threaded builds.
+
+param([switch]$Cpu)
 
 $ErrorActionPreference = "Stop"
 
@@ -30,17 +39,37 @@ Write-Host "== Creating virtual environment (.venv) ==" -ForegroundColor Cyan
 $py = ".\.venv\Scripts\python.exe"
 & $py -m pip install --upgrade pip
 
-# --- PyTorch (CUDA build for the RTX A1000) ---------------------------------
-Write-Host "== Installing PyTorch (CUDA cu124) ==" -ForegroundColor Cyan
-& $py -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+# --- PyTorch ------------------------------------------------------------------
+if ($Cpu) {
+    Write-Host "== Installing PyTorch (CPU-only) ==" -ForegroundColor Cyan
+    & $py -m pip install "torch==2.11.0" "torchaudio==2.11.0" "torchvision==0.26.0" `
+        --index-url https://download.pytorch.org/whl/cpu
+} else {
+    # Pinned combination VALIDATED on this machine (RTX 5060 Laptop, sm_120).
+    # Other GPUs: check docs/HARDWARE_SETUP.md before assuming this wheel.
+    Write-Host "== Installing PyTorch (CUDA cu128, pinned) ==" -ForegroundColor Cyan
+    & $py -m pip install "torch==2.11.0" "torchaudio==2.11.0" "torchvision==0.26.0" `
+        --index-url https://download.pytorch.org/whl/cu128
+}
 
 # --- Everything else --------------------------------------------------------
 Write-Host "== Installing the rest of the pipeline ==" -ForegroundColor Cyan
 & $py -m pip install -r requirements.txt
 
+# clearvoice requires numpy<2; some torch-adjacent upgrades pull numpy 2.x back
+# in. Re-pin last so the constraint always wins (this bit us in production).
+& $py -m pip install "numpy<2.0,>=1.24.3"
+
 # --- Verify -----------------------------------------------------------------
 Write-Host "== Verifying environment ==" -ForegroundColor Cyan
 & $py check_env.py
+
+Write-Host "== Doctor (GPU/torch compatibility gate) ==" -ForegroundColor Cyan
+& $py -m aegis doctor
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "aegis doctor reported a hard failure - do NOT run the pipeline. See output above."
+    exit 1
+}
 
 Write-Host ""
 Write-Host "Setup complete. Run analyses with:" -ForegroundColor Green
