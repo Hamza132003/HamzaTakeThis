@@ -1,0 +1,32 @@
+# --- credentials (never commit) ---
+hf_token.txt
+
+# --- environments & caches ---
+.venv/
+__pycache__/
+*.pyc
+.claude/
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+
+# --- recordings & processed results (private audio stays local) ---
+recording/
+outputs/
+outputs_v2/
+uploads/
+checkpoints/
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+
+# --- decks & internal docs ---
+*.pptx
+append_usecase2.py
+image.png
+
+# --- logs & leftovers ---
+*.log
+setup_log.txt
+*.whl

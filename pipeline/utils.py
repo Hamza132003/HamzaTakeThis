@@ -1,0 +1,137 @@
+"""Shared helpers: device selection, logging, timing, audio I/O."""
+from __future__ import annotations
+
+import sys
+import time
+import contextlib
+from pathlib import Path
+
+
+# Windows consoles often default to a legacy codepage (e.g. cp1256) that can't
+# encode our status glyphs. Force UTF-8 on the streams so logging never crashes.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# Corporate networks intercept TLS with their own root certificate, which
+# Python's bundled CA store rejects (SSL: CERTIFICATE_VERIFY_FAILED on
+# huggingface.co). Use the Windows system certificate store instead — it
+# trusts the corporate root, and behaves identically on normal networks.
+try:
+    import truststore as _truststore
+    _truststore.inject_into_ssl()
+except Exception:
+    pass
+
+_sb_patched = False
+
+
+def guard_speechbrain_lazy() -> None:
+    """SpeechBrain exposes optional integrations (k2, wordemb, ...) as lazy
+    modules whose __getattr__ raises ImportError when the optional dep is
+    missing. Transformers/inspect scan modules with hasattr(), which only
+    swallows AttributeError - so those ImportErrors crash translation/emotion.
+
+    Patch LazyModule so missing/dunder lookups raise AttributeError instead,
+    which makes hasattr() correctly return False. Idempotent; safe if
+    SpeechBrain isn't installed.
+
+    Also forces SpeechBrain's model fetching to COPY files instead of
+    creating symlinks: on Windows, symlink creation needs admin rights or
+    Developer Mode and otherwise fails with WinError 1314."""
+    global _sb_patched
+    if _sb_patched:
+        return
+    try:
+        from speechbrain.utils import importutils as _iu
+        _orig = _iu.LazyModule.__getattr__
+
+        def _safe(self, attr):
+            if attr.startswith("__") and attr.endswith("__"):
+                raise AttributeError(attr)
+            try:
+                return _orig(self, attr)
+            except ImportError as e:
+                raise AttributeError(attr) from e
+
+        _iu.LazyModule.__getattr__ = _safe
+        _sb_patched = True
+    except Exception:
+        pass
+
+    try:
+        from speechbrain.utils import fetching as _f
+        if (not getattr(_f, "_vi_copy_patch", False)
+                and hasattr(_f, "link_with_strategy")
+                and hasattr(_f, "LocalStrategy")):
+            _orig_link = _f.link_with_strategy
+
+            def _no_symlink(src, dst, local_strategy, *a, **kw):
+                if local_strategy == _f.LocalStrategy.SYMLINK:
+                    local_strategy = _f.LocalStrategy.COPY
+                return _orig_link(src, dst, local_strategy, *a, **kw)
+
+            _f.link_with_strategy = _no_symlink
+            _f._vi_copy_patch = True
+    except Exception:
+        pass
+
+
+def log(msg: str) -> None:
+    """Print a timestamped status line (flushed so it streams live)."""
+    line = f"[{time.strftime('%H:%M:%S')}] {msg}"
+    try:
+        print(line, flush=True)
+    except Exception:
+        print(line.encode("ascii", "replace").decode("ascii"), flush=True)
+
+
+@contextlib.contextmanager
+def stage(name: str):
+    """Context manager that logs start/end + duration of a pipeline stage."""
+    log(f"► {name} ...")
+    t0 = time.time()
+    try:
+        yield
+    finally:
+        log(f"✓ {name} done ({time.time() - t0:.1f}s)")
+
+
+def resolve_device(pref: str = "auto") -> str:
+    """Return 'cuda' or 'cpu' based on preference and availability."""
+    if pref == "cpu":
+        return "cpu"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:
+        pass
+    if pref == "cuda":
+        log("WARNING: cuda requested but not available; falling back to cpu.")
+    return "cpu"
+
+
+def free_cuda() -> None:
+    """Release cached GPU memory between heavy stages (6GB VRAM is tight)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def load_wav_mono(path: Path, sample_rate: int):
+    """Load an audio file as float32 mono at the given sample rate."""
+    import librosa
+    y, _ = librosa.load(str(path), sr=sample_rate, mono=True)
+    return y
+
+
+def fmt_ts(seconds: float) -> str:
+    """Format seconds as M:SS.s for human-readable timelines."""
+    m, s = divmod(max(0.0, float(seconds)), 60)
+    return f"{int(m)}:{s:04.1f}"

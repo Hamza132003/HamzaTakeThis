@@ -1,0 +1,133 @@
+# ============================================================
+# Voice Isolator - configuration
+# Everything runs locally. Edit values or override via CLI flags.
+# ============================================================
+
+# "cuda" to use the GPU, "cpu" to force CPU, "auto" to pick GPU if available.
+device: auto
+
+# Where intermediate files + reports are written (per-input subfolder created).
+output_dir: outputs
+
+# ------------------------------------------------------------
+# Stage 1: audio extraction
+# ------------------------------------------------------------
+audio:
+  sample_rate: 16000        # working sample rate for the speech models (ASR/diarization)
+  hq_sample_rate: 48000     # full-band rate for enhancement + the voice.wav deliverable
+
+# ------------------------------------------------------------
+# Stage 2: voice / noise separation
+# ------------------------------------------------------------
+separation:
+  enabled: true
+  # method: clearvoice (MossFormer2 48kHz, best) | deepfilternet | enhance
+  #         (legacy SepFormer 16k) | noisereduce | none
+  method: clearvoice
+  # MossFormer2_SE_48K    = full-band 48 kHz, best fidelity (default)
+  # MossFormerGAN_SE_16K  = strongest denoiser, best on very degraded audio (16 kHz)
+  # FRCRN_SE_16K          = lighter alternative (16 kHz)
+  clearvoice_model: MossFormer2_SE_48K
+  passes: 1                 # 2 = run enhancement twice (more noise removed,
+                            # slight risk of eating weak speech)
+  enhance_model: speechbrain/sepformer-wham16k-enhancement   # legacy fallback
+  chunk_sec: 30             # enhance long files in chunks (VRAM safety)
+  chunk_overlap_sec: 2      # crossfaded overlap between chunks
+  # Voice loudness cleanup AFTER separation.
+  enhance_voice: true
+  highpass_hz: 80           # remove low rumble below this frequency (0 = off)
+  loudness_lufs: -18.0      # EBU R128 integrated loudness target
+  peak_ceiling_dbfs: -1.0   # never exceed this peak (prevents clipping)
+  vad_gain: true            # boost quiet speech regions AFTER denoising
+  vad_gain_max_db: 9.0      # never boost a region more than this
+
+# ------------------------------------------------------------
+# Stage 3: noise analysis (PANNs sound-event detection)
+# ------------------------------------------------------------
+noise:
+  enabled: true
+  top_k: 8                  # how many distinct sound events to report
+  min_prob: 0.15            # confidence threshold for an event to count
+
+# ------------------------------------------------------------
+# Stage 4: diarization (pyannote) - count + who-spoke-when
+# ------------------------------------------------------------
+diarization:
+  enabled: true
+  # One-time free token from https://hf.co/settings/tokens (read scope) AND
+  # accept terms at ALL THREE:
+  #   https://hf.co/pyannote/speaker-diarization-community-1
+  #   https://hf.co/pyannote/speaker-diarization-3.1
+  #   https://hf.co/pyannote/segmentation-3.0
+  # Set env var HF_TOKEN, or paste it here (leave blank to use env var).
+  # Leave blank here for the public repo — put your token in hf_token.txt
+  # (project root, gitignored), the HF_TOKEN env var, or the GUI field.
+  hf_token: ""
+  model: pyannote/speaker-diarization-community-1
+  min_speakers: null        # set an int to constrain, or null = auto
+  max_speakers: null
+
+# ------------------------------------------------------------
+# Multi-speaker overlap un-mixing. Needs diarization.
+# ------------------------------------------------------------
+speakers:
+  separate_overlap: true    # un-mix simultaneous speech into per-speaker tracks
+  separator: MossFormer2_SS_16K                          # clearvoice separator
+  sepformer_model: speechbrain/sepformer-whamr16k        # fallback
+  embedding_model: speechbrain/spkrec-ecapa-voxceleb     # speaker matching
+
+# ------------------------------------------------------------
+# Stage 5: transcription (faster-whisper)
+# ------------------------------------------------------------
+transcription:
+  enabled: true
+  model: large-v3           # tiny/base/small/medium/large-v3
+  compute_type: int8_float16   # int8_float16 (6GB GPU), float16, or int8 (CPU)
+  # Source language for the WHOLE recording (one language per clip):
+  #   fa = Farsi   he = Hebrew   ar = Arabic   en = English
+  #   auto = detect the language, falling back to scoring the candidates below
+  language: auto
+  languages: [fa, he, ar, en]  # candidates used only when language: auto
+  # What audio Whisper transcribes: "both" tries the original AND the isolated
+  # voice and keeps whichever finds more real speech (best for noisy clips);
+  # or force "original" / "voice".
+  source: both
+  word_timestamps: true     # per-word timing + confidence in the transcript
+  gate_with_diarization: true  # only decode where diarization found speech
+  beam_size: 8              # wider beam = better accuracy, slower (5-10)
+  use_initial_prompt: true  # bias decoding toward formal punctuated text
+  # Hallucination rejection thresholds:
+  max_no_speech_prob: 0.6
+  min_avg_logprob: -1.0
+  max_compression_ratio: 2.4
+  min_word_prob: 0.35       # drop segments whose mean word confidence is below
+
+# ------------------------------------------------------------
+# Stage 6: translation to Arabic (NLLB-200)
+# ------------------------------------------------------------
+translation:
+  enabled: true
+  model: facebook/nllb-200-distilled-1.3B      # quality-first
+  fallback_model: facebook/nllb-200-distilled-600M  # used on OOM / load failure
+  target_lang: arb_Arab     # Modern Standard Arabic
+  # native = translate the source-language transcript directly (no English
+  # pivot, so a Whisper hallucination can't leak into the Arabic).
+  source: native
+  batch_size: 8
+  num_beams: 5
+
+# ------------------------------------------------------------
+# Stage 7: sentiment / emotion (vocal tone, language-agnostic)
+# ------------------------------------------------------------
+emotion:
+  enabled: true
+  model: superb/wav2vec2-base-superb-er
+
+# ------------------------------------------------------------
+# Stage 8: AI summary of the whole recording (local LLM)
+# ------------------------------------------------------------
+summary:
+  enabled: true
+  # Small multilingual instruct model; 4-bit on GPU (~2.7 GB), CPU fallback.
+  model: Qwen/Qwen3-4B-Instruct-2507
+  max_new_tokens: 600

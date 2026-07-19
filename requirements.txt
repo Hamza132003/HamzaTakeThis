@@ -1,0 +1,54 @@
+# ---- Core ----
+numpy>=1.24,<2.3
+scipy>=1.11
+soundfile>=0.12
+librosa>=0.10
+pyyaml>=6.0
+tqdm>=4.66
+
+# ---- ffmpeg (bundled binary, no system install needed) ----
+imageio-ffmpeg>=0.5
+
+# ---- Deep learning backbone ----
+# Install a CUDA build of torch separately (see README / setup script)
+torch>=2.2
+torchaudio>=2.2
+
+# ---- Web dashboard backend ----
+flask>=3.0
+
+# ---- Speech enhancement / separation ----
+# clearvoice (MossFormer2_SE_48K) is the primary 48 kHz enhancer; install it
+# LAST — if it fights the venv on Windows, retry `pip install clearvoice --no-deps`
+# and the pipeline will fall back to deepfilternet automatically if unusable.
+clearvoice
+# deepfilternet>=0.5.6   # optional fallback enhancer; needs a Rust toolchain
+#                        # to build on Python 3.12 — install manually if wanted
+speechbrain>=1.0
+noisereduce>=3.0
+
+# ---- Loudness normalization (EBU R128) ----
+pyloudnorm>=0.1.1
+
+# ---- Sound-event detection (what/when is the noise) ----
+panns-inference>=0.1.1
+
+# ---- Speaker diarization (count + who-spoke-when) ----
+pyannote.audio>=3.1
+
+# ---- Transcription ----
+faster-whisper>=1.0
+
+# ---- Translation to Arabic + emotion ----
+transformers>=4.40
+sentencepiece>=0.2
+huggingface_hub>=0.23
+
+# ---- Corporate-proxy TLS support (use Windows system cert store) ----
+truststore>=0.9
+
+# ---- AI summary (local LLM) ----
+accelerate>=1.0
+torchao==0.8.0          # int8 GPU quantization (pin: newer needs torch>=2.11)
+# bitsandbytes          # alternative 4-bit; its wheel is blocked on some
+#                       # corporate networks — torchao covers the same need
