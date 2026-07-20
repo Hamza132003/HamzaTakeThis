@@ -429,17 +429,26 @@ def _conditions(stats: dict, out: list[CategoricalCondition]) -> None:
 
 
 # ------------------------------------------------------------------- entry
-def analyse(audio: np.ndarray, sr: int) -> ConditionVector:
-    """audio: (C, N) float array (any float dtype), NOT modified."""
+def analyse(audio: np.ndarray, sr: int,
+            forced_mode: Literal["full-file", "windowed-sample"] | None = None,
+            extra_warnings: list[str] | None = None) -> ConditionVector:
+    """audio: (C, N) float array (any float dtype), NOT modified.
+
+    `forced_mode` is set by analyse_path() when the caller has already read a
+    bounded selection from disk, so this function must not window again.
+    """
     audio = np.atleast_2d(np.asarray(audio))
-    warnings: list[str] = []
+    warnings: list[str] = list(extra_warnings or [])
     nonfinite = int(np.sum(~np.isfinite(audio)))
 
     # Window BEFORE the float64 copy so long files never spike RAM with a
     # full-length high-precision duplicate (bounded-memory requirement).
     dur = audio.shape[1] / float(sr)
-    mode: Literal["full-file", "windowed-sample"] = "full-file"
-    if dur > T["max_full_analysis_sec"]:
+    mode: Literal["full-file", "windowed-sample"] = forced_mode or "full-file"
+    if forced_mode is None and dur > T["max_full_analysis_sec"]:
+        # In-array fallback (callers that already hold the audio). The
+        # bounded-memory entry point is analyse_path(), which never loads a
+        # long recording in the first place.
         mode = "windowed-sample"
         w = int(T["sample_window_sec"] * sr)
         n = audio.shape[1]
@@ -472,3 +481,43 @@ def analyse(audio: np.ndarray, sr: int) -> ConditionVector:
                            analysis_mode=mode, measurements=meas,
                            channel_metadata=ch_meta, conditions=conditions,
                            warnings=warnings)
+
+
+def analyse_path(wav_path) -> ConditionVector:
+    """Bounded-memory diagnostics entry point.
+
+    Reads only what it analyses:
+    - duration <= `max_full_analysis_sec` (120 s): the whole file is read, a
+      documented bound of roughly 46 MB at 48 kHz stereo float32;
+    - longer: exactly three deterministic `sample_window_sec` windows
+      (start / middle / end) are seek-read from disk. The recording is NEVER
+      read in full, so peak memory is independent of duration.
+    """
+    import soundfile as sf
+
+    info = sf.info(str(wav_path))
+    sr, frames = int(info.samplerate), int(info.frames)
+    dur = frames / float(sr) if sr else 0.0
+
+    if dur <= T["max_full_analysis_sec"]:
+        data, _ = sf.read(str(wav_path), dtype="float32", always_2d=True)
+        return analyse(data.T, sr, forced_mode="full-file")
+
+    w = int(T["sample_window_sec"] * sr)
+    starts = [0, max(0, frames // 2 - w // 2), max(0, frames - w)]
+    chunks = []
+    for s in starts:
+        want = min(w, frames - s)
+        if want <= 0:
+            continue
+        d, _ = sf.read(str(wav_path), start=s, frames=want, dtype="float32",
+                       always_2d=True)
+        chunks.append(d.T)
+    audio = np.concatenate(chunks, axis=1) if chunks else np.zeros((1, 0),
+                                                                   dtype=np.float32)
+    note = (f"recording {dur:.0f}s > {T['max_full_analysis_sec']:.0f}s: "
+            f"diagnostics computed on 3 deterministic seek-read windows "
+            f"(start/mid/end, {T['sample_window_sec']:.0f}s each); the full "
+            f"recording was never loaded into memory")
+    return analyse(audio, sr, forced_mode="windowed-sample",
+                   extra_warnings=[note])

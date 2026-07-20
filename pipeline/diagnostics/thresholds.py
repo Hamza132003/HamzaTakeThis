@@ -7,7 +7,11 @@ modes for each threshold are documented in docs/DIAGNOSTICS.md — no
 unexplained constants may appear in signal.py.
 """
 
-THRESHOLDS_VERSION = "diag-v1"
+# diag-v2 (Phase 1 repair): `max_full_analysis_sec` lowered 600 → 120 so that
+# full-file diagnostics can never allocate more than a documented bound
+# (120 s x 48 kHz x 2 ch x 4 B ≈ 46 MB). Longer recordings use the bounded
+# 3-window sampling path, which reads only those windows from disk.
+THRESHOLDS_VERSION = "diag-v2"
 
 THRESHOLDS: dict[str, float] = {
     # --- amplitude ---------------------------------------------------------
@@ -55,6 +59,6 @@ THRESHOLDS: dict[str, float] = {
     # --- analysis windows --------------------------------------------------
     "fft_size": 4096,             # STFT length (documented in DIAGNOSTICS.md)
     "hop_size": 1024,
-    "max_full_analysis_sec": 600.0,  # longer files switch to windowed sampling
+    "max_full_analysis_sec": 120.0,  # longer files switch to windowed sampling
     "sample_window_sec": 60.0,       # windowed mode: 3 windows (start/mid/end)
 }
