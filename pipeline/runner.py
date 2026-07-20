@@ -170,6 +170,9 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
             "overlaps": overlaps,
             "languages_detected": sorted({s.get("language", "?") for s in segs}),
             "warnings": warnings,
+            # Structured Phase 1 ingest status is preserved for later
+            # reporting (Phase 9 renders it; Phase 1 only records it).
+            "ingest_status": au.get("ingest_status"),
             "summary": ai,
             "pipeline": {
                 "separation": sep["method"],

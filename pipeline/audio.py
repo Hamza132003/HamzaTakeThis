@@ -75,21 +75,49 @@ def extract_audio(input_path: Path, out_dir: Path, sample_rate: int,
 
     ingest_cfg = (cfg or {}).get("ingest", {}) if cfg else {}
     manifest = None
+    status: dict = {"state": "disabled", "ok": False, "stages_completed": [],
+                    "failures": [], "failure_reason": None,
+                    "store_relative_dir": None}
+
     if ingest_cfg.get("enabled", True):
         try:
             from pipeline.ingest.ingest import ingest_file
             manifest = ingest_file(Path(input_path), Path(out_dir), cfg)
+            status = {
+                "state": "ok" if manifest.ok else "degraded",
+                "ok": manifest.ok,
+                "stages_completed": list(manifest.stages_completed),
+                "failures": [f.model_dump() for f in manifest.failures],
+                "failure_reason": manifest.failure_reason,
+                "store_relative_dir": manifest.store_relative_dir,
+            }
             n_assets = len(manifest.derived)
             n_cond = len(manifest.condition_vector.conditions) \
                 if manifest.condition_vector else 0
-            log(f"Ingest: {n_assets} channel asset(s), {n_cond} condition "
-                f"check(s) → ingest_manifest.json"
+            log(f"Ingest [{status['state']}]: {n_assets} channel asset(s), "
+                f"{n_cond} condition check(s), canonical store "
+                f"{manifest.store_relative_dir}"
                 + (f" [duplicate of {manifest.source.duplicate_of}]"
                    if manifest.source.duplicate_of else ""))
         except Exception as e:
-            log(f"WARNING: Phase 1 ingest failed ({e}); legacy outputs intact.")
+            # ingest_file is designed not to raise; this is the last-resort
+            # guard so the legacy path can never be taken down by ingest.
+            status = {
+                "state": "failed", "ok": False, "stages_completed": [],
+                "failures": [{"stage": "unknown",
+                              "exception_type": type(e).__name__,
+                              "message": " ".join(str(e).split())[:300],
+                              "occurred_utc": None, "source_content_id": None,
+                              "recoverable": False, "legacy_continued": True,
+                              "warnings": []}],
+                "failure_reason": f"unexpected ingest error: {type(e).__name__}",
+                "store_relative_dir": None,
+            }
+            log(f"WARNING: evidence-grade ingest did NOT complete "
+                f"({type(e).__name__}); legacy outputs intact.")
 
     out["ingest_manifest"] = manifest
+    out["ingest_status"] = status          # ALWAYS present and machine-readable
     return out
 
 

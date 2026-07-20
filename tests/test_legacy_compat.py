@@ -67,12 +67,13 @@ def test_facade_legacy_files_byte_identical_to_phase0(tmp_path):
         assert b_ref == b_new, f"{key} not byte-identical to Phase 0 output"
 
 
-def test_facade_returns_legacy_keys_plus_manifest(tmp_path):
+def test_facade_returns_legacy_keys_plus_manifest_and_status(tmp_path):
     src = _fixture(tmp_path)
-    out = extract_audio(src, tmp_path / "o", 16000, cfg={"ingest": {"enabled": True},
-                                                         "storage": {"artifact_dir":
-                                                                     str(tmp_path / "store")}})
-    assert set(out) == {"work_wav", "hq_wav", "ingest_manifest"}
+    store = tmp_path / "store"
+    out = extract_audio(src, tmp_path / "o", 16000,
+                        cfg={"ingest": {"enabled": True},
+                             "storage": {"artifact_dir": str(store)}})
+    assert set(out) == {"work_wav", "hq_wav", "ingest_manifest", "ingest_status"}
     assert out["work_wav"].name == "audio_16k_mono.wav"
     assert out["hq_wav"].name == "audio_48k_mono.wav"
     m = out["ingest_manifest"]
@@ -80,15 +81,20 @@ def test_facade_returns_legacy_keys_plus_manifest(tmp_path):
     roles = {d.role for d in m.derived}
     assert {"channel_0", "channel_1", "mono_mix", "mid", "side"} <= roles
     assert m.condition_vector is not None
-    assert (tmp_path / "o" / "ingest_manifest.json").exists()
+    assert out["ingest_status"]["state"] == "ok"
+    # canonical manifest in the store; only a pointer in the output tree
+    assert (store / m.store_relative_dir / "ingest_manifest.json").exists()
+    assert (tmp_path / "o" / "ingest_pointer.json").exists()
+    assert not (tmp_path / "o" / "ingest_manifest.json").exists()
 
 
 def test_ingest_disabled_matches_legacy_only(tmp_path):
     src = _fixture(tmp_path)
     out = extract_audio(src, tmp_path / "o", 16000, cfg={"ingest": {"enabled": False}})
     assert out["ingest_manifest"] is None
+    assert out["ingest_status"]["state"] == "disabled"
     assert not (tmp_path / "o" / "ingest").exists()
-    assert not (tmp_path / "o" / "ingest_manifest.json").exists()
+    assert not (tmp_path / "o" / "ingest_pointer.json").exists()
     assert (tmp_path / "o" / "audio_16k_mono.wav").exists()
 
 
