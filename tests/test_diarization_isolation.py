@@ -75,6 +75,7 @@ def test_worker_environment_manifest_requires_numpy2():
 def test_fallback_never_claims_pyannote_success(tmp_path):
     np = pytest.importorskip("numpy")
     sf = pytest.importorskip("soundfile")
+    pytest.importorskip("librosa")   # the fallback segmenter needs it
     from pipeline.diarization import _fallback
     wav = tmp_path / "a.wav"
     sf.write(str(wav), np.zeros(16000, dtype="float32"), 16000)
@@ -100,6 +101,7 @@ def test_every_failure_stage_has_distinct_help_text():
 def test_diarize_reports_worker_env_missing_without_importing_pyannote(tmp_path, monkeypatch):
     np = pytest.importorskip("numpy")
     sf = pytest.importorskip("soundfile")
+    pytest.importorskip("librosa")   # reached via the fallback segmenter
     from pipeline import diarization
     wav = tmp_path / "a.wav"
     sf.write(str(wav), np.zeros(16000, dtype="float32"), 16000)
