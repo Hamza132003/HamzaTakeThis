@@ -60,8 +60,13 @@ def probe(path: Path) -> MediaMetadata:
             meta.codec_profile = getattr(cc, "profile", None) or None
             if meta.codec_profile is None:
                 meta.unavailable_reasons["codec_profile"] = "codec reports no profile"
-            meta.sample_rate = int(cc.sample_rate) if cc.sample_rate else None
-            meta.channels = int(cc.channels) if cc.channels else None
+            # sample_rate/channels live on the audio-specific CodecContext
+            # subclass; getattr keeps the static checker honest about the
+            # generic base type PyAV declares.
+            _sr = getattr(cc, "sample_rate", None)
+            _ch = getattr(cc, "channels", None)
+            meta.sample_rate = int(_sr) if _sr else None
+            meta.channels = int(_ch) if _ch else None
             layout = getattr(cc, "layout", None)
             meta.channel_layout = getattr(layout, "name", None)
             if meta.channel_layout is None:

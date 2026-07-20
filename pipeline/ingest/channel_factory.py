@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 from pipeline.contracts import DerivedAudio
-from pipeline.ingest.immutable import content_id, stream_hashes, utc_now_iso
+from pipeline.ingest.immutable import content_id, utc_now_iso
 
 
 def _ffmpeg_exe() -> str:

@@ -12,7 +12,8 @@ select = ["E", "F", "W", "I"]
 
 [tool.mypy]
 python_version = "3.12"
-files = ["aegis", "tools", "pipeline/asr"]
+files = ["aegis", "tools", "pipeline/asr", "pipeline/contracts",
+         "pipeline/ingest", "pipeline/diagnostics"]
 ignore_missing_imports = true
 warn_unused_ignores = true
 no_implicit_optional = true

@@ -13,6 +13,8 @@ windows (start/middle/end) and flagged analysis_mode="windowed-sample".
 """
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 
 from pipeline.contracts import (
@@ -25,10 +27,13 @@ from pipeline.contracts import (
 from .thresholds import THRESHOLDS as T
 from .thresholds import THRESHOLDS_VERSION
 
+MeasurementKind = Literal["measured", "estimated", "proxy"]
+
 _EPS = 1e-12
 
 
-def _m(name: str, value, units: str, method: str, kind: str = "measured",
+def _m(name: str, value, units: str, method: str,
+       kind: MeasurementKind = "measured",
        valid: bool = True, reason: str | None = None,
        window: str | None = None) -> DiagnosticMeasurement:
     v = None
@@ -363,7 +368,8 @@ def _conditions(stats: dict, out: list[CategoricalCondition]) -> None:
              f"window {T['narrowband_low_hz']:.0f}–{T['narrowband_high_hz']:.0f} Hz",
              ["occupied_band_low_edge", "occupied_band_high_edge"])
         hf = sp["high_edge"] < T["hf_loss_hz"]
-        cond("probable_severe_lowpass", hf, min(1.0, T["hf_loss_hz"] / max(sp["high_edge"], 1.0) - 1.0),
+        hf_sev = min(1.0, T["hf_loss_hz"] / max(sp["high_edge"], 1.0) - 1.0)
+        cond("probable_severe_lowpass", hf, hf_sev,
              f"upper occupied edge {sp['high_edge']:.0f} Hz < {T['hf_loss_hz']:.0f} Hz",
              ["occupied_band_high_edge"])
         hp = sp["low_edge"] > 300.0 and not nb
@@ -426,13 +432,11 @@ def analyse(audio: np.ndarray, sr: int) -> ConditionVector:
     audio = np.atleast_2d(np.asarray(audio))
     warnings: list[str] = []
     nonfinite = int(np.sum(~np.isfinite(audio)))
-    if nonfinite:
-        warnings.append(f"{nonfinite} non-finite samples sanitized to 0 for analysis")
-        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
-    audio = audio.astype(np.float64, copy=True)     # never mutates caller data
 
+    # Window BEFORE the float64 copy so long files never spike RAM with a
+    # full-length high-precision duplicate (bounded-memory requirement).
     dur = audio.shape[1] / float(sr)
-    mode = "full-file"
+    mode: Literal["full-file", "windowed-sample"] = "full-file"
     if dur > T["max_full_analysis_sec"]:
         mode = "windowed-sample"
         w = int(T["sample_window_sec"] * sr)
@@ -442,6 +446,11 @@ def analyse(audio: np.ndarray, sr: int) -> ConditionVector:
         warnings.append(
             f"file >{T['max_full_analysis_sec']}s: diagnostics computed on 3 "
             f"deterministic windows (start/mid/end, {T['sample_window_sec']}s each)")
+
+    audio = audio.astype(np.float64, copy=True)     # never mutates caller data
+    if nonfinite:
+        warnings.append(f"{nonfinite} non-finite samples sanitized to 0 for analysis")
+        audio = np.nan_to_num(audio, nan=0.0, posinf=0.0, neginf=0.0)
 
     mono = audio.mean(axis=0)
     meas: list[DiagnosticMeasurement] = []

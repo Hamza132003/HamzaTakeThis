@@ -11,7 +11,7 @@ from pathlib import Path
 # encode our status glyphs. Force UTF-8 on the streams so logging never crashes.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8", errors="replace")
+        _stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
     except Exception:
         pass
 
