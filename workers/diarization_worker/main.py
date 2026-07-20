@@ -103,6 +103,12 @@ def run(req: DiarizationRequest) -> DiarizationResponse:
         from pyannote.audio import Pipeline
         token = os.environ.get("HF_TOKEN") or None      # env only, never argv
         kwargs = {"token": token} if token else {}      # pyannote 4 API
+        if req.model_revision:
+            # Pin the exact commit. Without this pyannote resolves the default
+            # 'main' ref, which a revision-pinned snapshot_download never
+            # populates (no refs/ entry) — so an otherwise fully cached model
+            # fails offline with LocalEntryNotFoundError.
+            kwargs["revision"] = req.model_revision
         pipeline = Pipeline.from_pretrained(req.model_id, **kwargs)
         if pipeline is None:
             raise RuntimeError(

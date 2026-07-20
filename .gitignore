@@ -1,5 +1,14 @@
 # --- credentials (never commit) ---
+# Broad patterns on purpose: an exact-name rule missed `.hf_token.txt.txt`
+# (a Notepad "save as" artifact), which `git add -A` then staged. The push was
+# rejected before it reached the remote, but the near miss is why these are
+# now wildcards rather than one literal filename.
 hf_token.txt
+*hf_token*
+*.token
+*token.txt
+.env
+secrets.*
 
 # --- environments & caches ---
 .venv/

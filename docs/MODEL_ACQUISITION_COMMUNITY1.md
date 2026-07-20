@@ -129,7 +129,46 @@ no code change required, no other component affected. To remove the entire
 worker environment as well:
 `Remove-Item -Recurse -Force "$env:LOCALAPPDATA\AegisXPrime\envs\diarization"`.
 
-## 10. Residual risks
+## 10. ACCEPTANCE RESULTS (2026-07-20)
+
+Download: pinned revision `3533c8cf…`, GIF excluded, 5.86 s. Cache verified
+independently against the integrity manifest: **9 files verified, 0 mismatched,
+0 missing** — all four LFS weight objects SHA-256 match.
+
+Network-disabled inference (`HF_HUB_OFFLINE=1`) on a synthetic two-speaker
+fixture (two distinct Windows TTS voices, 34.14 s, deliberate overlap):
+
+| Metric | Raw fixture | ClearVoice-enhanced (`voice_16k.wav`) |
+|---|---|---|
+| genuine_pyannote | **true** | **true** |
+| speakers detected | **2** ✅ | **1** ❌ |
+| regular turns | 14 | 12 |
+| exclusive turns | 12 | 12 |
+| overlap regions | 2 | 0 |
+| device / time / peak VRAM | cuda / 11.65 s / 2723.6 MB | cuda / 9.22 s / 2723.6 MB |
+
+Structural checks on the raw-fixture result: non-empty, monotonically ordered,
+all turns within [0, duration], no duplicate turns, exclusive ≠ regular,
+overlap preserved — **all pass**.
+
+### Open finding: enhancement destroys speaker separability
+
+The pipeline feeds diarization the **ClearVoice-enhanced** `voice_16k.wav`.
+With identical model, revision, settings and offline path, that input yields
+**1 speaker instead of 2, and loses both overlap regions**. The raw audio
+yields the correct 2 speakers. Enhancement — not diarization — is the cause.
+
+This is precisely the effect the specification warns about (§8.1: enhancement
+artifacts degrading downstream tasks) and is the motivation for Phase 2's
+evidence-gated branch selection. It is recorded here, **not fixed**, because
+changing which audio branch diarization consumes is Phase 2 routing work and
+was not in scope for this pass.
+
+Consequence for the acceptance gate: real diarization **is functional and
+genuine**, but the "≥2 speakers where the reference has two" criterion is met
+only on the raw branch, not through the current pipeline routing.
+
+## 11. Residual risks
 
 - The gate collects company/use-case data and permits occasional emails — an
   operator/privacy decision, not a technical one.

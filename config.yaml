@@ -91,7 +91,10 @@ diarization:
   # (project root, gitignored), the HF_TOKEN env var, or the GUI field.
   hf_token: ""
   model: pyannote/speaker-diarization-community-1
-  model_revision: null      # pin an exact commit once weights are acquired
+  # Pinned commit, verified against the integrity manifest. pyannote must
+  # be given this explicitly: a revision-pinned download populates no
+  # refs/main entry, so the default ref cannot resolve offline.
+  model_revision: 3533c8cf8e369892e6b79ff1bf80f7b0286a54ee
   # Worker interpreter; null = %LOCALAPPDATA%\AegisXPrime\envs\diarization
   worker_python: null
   offline: true             # worker never reaches the network by default
