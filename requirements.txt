@@ -34,7 +34,17 @@ pyloudnorm>=0.1.1
 panns-inference>=0.1.1
 
 # ---- Speaker diarization (count + who-spoke-when) ----
-pyannote.audio>=3.1
+# INTENTIONALLY ABSENT from this environment.
+#
+# pyannote.audio 4 requires numpy>=2 (via pyannote-core 6), while ClearVoice
+# in this environment requires numpy<2 — the two cannot coexist. Diarization
+# therefore runs in an isolated worker environment created by
+# ./setup_diarization.ps1 (see docs/DIARIZATION_RUNTIME_ARCHITECTURE.md and
+# requirements-diarization.txt).
+#
+# Do not add pyannote.audio here: pyannote 3.x is additionally broken against
+# the pinned torchaudio 2.11 (torchaudio.AudioMetaData was removed), so an
+# entry here would look like a working backend while never being used.
 
 # ---- Transcription ----
 faster-whisper>=1.0

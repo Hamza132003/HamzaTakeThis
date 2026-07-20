@@ -1,0 +1,23 @@
+# Diarization WORKER environment only — NOT the main runtime.
+#
+# This set is deliberately isolated: pyannote.audio 4 requires numpy>=2 via
+# pyannote-core 6, while ClearVoice in the main environment requires numpy<2.
+# See docs/DIARIZATION_RUNTIME_ARCHITECTURE.md.
+#
+# Install with:  ./setup_diarization.ps1        (never into the main .venv)
+# torch/torchaudio come from the cu128 index (same family as the main env, so
+# the sm_120 GPU story is identical); they are installed by the setup script,
+# not listed here, because they need --index-url.
+#
+# Exact pins only — no floating ranges (verified by setup_diarization.ps1).
+
+pyannote.audio==4.0.7
+pyannote.core==6.0.1
+pyannote.database==6.1.1
+pyannote.metrics==4.1
+pyannote.pipeline==4.0.0
+pyannoteai-sdk==0.4.0
+torchcodec==0.15.0
+numpy==2.5.1
+soundfile==0.12.1         # waveform preload; keeps torchcodec off the decode path
+huggingface_hub==1.24.0   # gated model access + local cache inspection

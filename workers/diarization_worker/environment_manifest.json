@@ -1,0 +1,40 @@
+{
+ "schema_version": 1,
+ "purpose": "isolated diarization worker environment (pyannote 4 + numpy 2)",
+ "reason": "pyannote-core 6 requires numpy>=2; ClearVoice in the main env requires numpy<2",
+ "python": "3.12.10",
+ "interpreter_default": "%LOCALAPPDATA%\\AegisXPrime\\envs\\diarization\\Scripts\\python.exe",
+ "must_not_be_installed_into": "the main repository .venv",
+ "torch_index": "https://download.pytorch.org/whl/cu128",
+ "packages": {
+  "pyannote.audio": "4.0.7",
+  "pyannote.core": "6.0.1",
+  "pyannote.database": "6.1.1",
+  "pyannote.pipeline": "4.0.0",
+  "pyannote.metrics": "4.1",
+  "pyannoteai-sdk": "0.4.0",
+  "numpy": "2.5.1",
+  "torch": "2.11.0+cu128",
+  "torchaudio": "2.11.0+cu128",
+  "torchcodec": "0.15.0",
+  "soundfile": "0.12.1",
+  "huggingface_hub": "1.24.0",
+  "lightning": "2.6.5",
+  "asteroid-filterbanks": "0.4.0"
+ },
+ "constraints": {
+  "numpy": ">=2 (required)",
+  "main_env_numpy": "<2 (required)"
+ },
+ "lock_file": "requirements-diarization.lock.txt",
+ "lock_sha256": "3f915e71ea0e28b86d6c54132a0e736af112caa3b13f0200c11c03d92d26b17d",
+ "torchcodec_decode_available": false,
+ "torchcodec_note": "native libtorchcodec cannot load without FFmpeg full-shared DLLs on Windows; NOT required because the worker passes pyannote a preloaded waveform",
+ "model": {
+  "id": "pyannote/speaker-diarization-community-1",
+  "revision": null,
+  "gated": true,
+  "weights_downloaded": false,
+  "note": "weight acquisition requires explicit operator approval"
+ }
+}
