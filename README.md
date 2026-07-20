@@ -51,14 +51,29 @@ cd "C:\Users\Waleed.Alawneh\Voice Isolator Code"
 This creates `.venv`, installs a CUDA build of PyTorch (for your RTX A1000 6GB),
 installs the rest, and runs `check_env.py`.
 
-### HuggingFace token (REQUIRED for speaker counting / overlap un-mixing)
+### Speaker diarization: isolated worker environment (one time)
 
-Only the pyannote diarization models are gated; everything else downloads
-without a token. One time, free, while logged in at hf.co:
+Diarization runs in its **own** Python environment, because `pyannote.audio 4`
+requires NumPy ≥ 2 while ClearVoice (the enhancement stage) requires NumPy < 2.
+They cannot share one environment — see
+[docs/DIARIZATION_RUNTIME_ARCHITECTURE.md](docs/DIARIZATION_RUNTIME_ARCHITECTURE.md).
 
-1. Accept the terms at **both** pages (forgetting the second one causes a 401):
-   - https://hf.co/pyannote/speaker-diarization-3.1
-   - https://hf.co/pyannote/segmentation-3.0
+```powershell
+./setup_diarization.ps1     # creates %LOCALAPPDATA%\AegisXPrime\envs\diarization
+```
+
+This installs packages only — no model weights.
+
+### HuggingFace token (required for real diarization)
+
+The pyannote diarization model is gated; everything else downloads without a
+token. One time, free, while logged in at hf.co:
+
+1. Accept the user agreement for the model this pipeline actually uses:
+   - https://hf.co/pyannote/speaker-diarization-community-1
+
+   (The older `speaker-diarization-3.1` and `segmentation-3.0` agreements are
+   **no longer required** — `community-1` is the pinned model.)
 2. Create a token at https://hf.co/settings/tokens — either a classic **read**
    token, or a fine-grained token with *"Read access to contents of all public
    gated repos you can access"*.
@@ -66,11 +81,15 @@ without a token. One time, free, while logged in at hf.co:
    ```powershell
    $env:HF_TOKEN = "hf_xxx"          # per session
    ```
-   or paste it into `config.yaml` under `diarization.hf_token`, or into the
-   token field in the dashboard.
+   or put it in `hf_token.txt` in the project root (gitignored), or paste it
+   into the token field in the dashboard. The token is passed to the worker
+   through its environment only — never on a command line and never in a
+   report.
 
-Without a token the tool still runs, but treats the audio as a **single
-speaker** and shows a warning banner on every report.
+Without the worker environment, a token, or cached weights, the tool still
+runs, but speaker detection falls back to **single-speaker** segmentation. That
+is **not** diarization: reports label it `fallback_single_speaker` with the
+specific reason, and `python -m aegis doctor` prints `DIARIZATION UNAVAILABLE`.
 
 ### Optional: DeepFilterNet fallback enhancer
 `deepfilternet` is a lighter 48 kHz fallback for the separation stage, but its

@@ -18,7 +18,9 @@ CHECKS = [
     ("noisereduce", "noisereduce", "separation last-resort fallback"),
     ("pyloudnorm", "pyloudnorm", "loudness normalization (EBU R128)"),
     ("panns_inference", "panns_inference", "noise identification"),
-    ("pyannote.audio", "pyannote.audio", "speaker diarization"),
+    # pyannote is NOT checked here: diarization runs in an isolated worker
+    # environment (numpy 2), not in this one (numpy 1.26 for ClearVoice).
+    # `python -m aegis doctor` reports the worker environment separately.
     ("faster_whisper", "faster_whisper", "transcription"),
     ("transformers", "transformers", "translation + emotion"),
     ("flask", "flask", "web dashboard"),
@@ -64,6 +66,8 @@ def main() -> None:
     import os
     tok = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
     print(f"HF token: {'set' if tok else 'NOT set (diarization will use fallback)'}")
+    print("Diarization runs in a SEPARATE worker environment - run "
+          "'python -m aegis doctor' to check it.")
 
 
 if __name__ == "__main__":
