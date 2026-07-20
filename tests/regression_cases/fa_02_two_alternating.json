@@ -1,0 +1,37 @@
+{
+ "schema_version": 1,
+ "case_id": "fa_02_two_alternating_42s_snr_m6",
+ "registered_utc": "2026-07-20",
+ "audio_path": "C:\\Users\\USER\\OneDrive\\Desktop\\Synthesized Audio\\Batch 1\\fa_02_two_alternating_42s_snr_m6.wav",
+ "audio_sha256": "9de7ce8160afeb410ba17cc624649b52f3a4112adeaa020479e3db72bef3048d",
+ "privacy": "PRIVATE - the recording is never committed, copied into the repo, or uploaded. Only this metadata is tracked.",
+ "expected": {
+  "language": "fa",
+  "speaker_count": 2,
+  "approx_duration_sec": 42.0,
+  "duration_tolerance_sec": 1.0,
+  "genuine_pyannote": true,
+  "fallback_used": false,
+  "speaker_labels_present": ["SPEAKER_00", "SPEAKER_01"]
+ },
+ "known_hallucinated_phrases": [
+  "thank you for watching",
+  "subscribe to my channel",
+  "this is the end of this video",
+  "see you in the next video"
+ ],
+ "observed_failure_2026_07_20": {
+  "diarization": "pyannote returned num_speakers=1 on raw_16k with genuine_pyannote=true; forcing min_speakers=2 produced a sensible 2-speaker partition, so the model can separate them but its automatic clustering merged them",
+  "enhanced_branch": "the ClearVoice branch produced 3 speakers (over-segmentation) - neither branch is correct unaided",
+  "transcript": "3 segments covering 11.68s of 42.0s (27.8%); English fields were generic YouTube-outro hallucinations that were then translated into Arabic",
+  "coverage": "diarization found no speech after 29.36s, and gate_with_diarization=true meant the final ~12.6s was never decoded"
+ },
+ "acceptance": {
+  "genuine_pyannote": true,
+  "fallback_used": false,
+  "both_speaker_labels_in_transcript": true,
+  "no_untriggered_outro_phrases": true,
+  "all_speech_accounted_for": true,
+  "hallucinated_segments_not_translated": true
+ }
+}

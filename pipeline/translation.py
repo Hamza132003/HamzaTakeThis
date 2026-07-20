@@ -35,7 +35,13 @@ def translate_segments(segments: list, cfg: dict, device: str,
     tgt = cfg.get("target_lang", "arb_Arab")
     if all(NLLB_SRC.get(s.get("language")) == tgt for s in segments):
         for s in segments:
-            s["arabic"] = s["text"]
+            # Suppressed segments must NOT be copied through: their `text` is
+            # the UNRELIABLE placeholder, not Arabic speech.
+            if s.get("translation_suppressed") or \
+                    (s.get("quality") or {}).get("unreliable"):
+                s["arabic"] = ""
+            else:
+                s["arabic"] = s["text"]
         log("Source already Arabic - skipping translation.")
         return segments
 
@@ -49,7 +55,16 @@ def translate_segments(segments: list, cfg: dict, device: str,
 
         # Group by source language so each batch shares tok.src_lang.
         todo = []
+        n_suppressed = 0
         for seg in segments:
+            # EVIDENCE GUARDRAIL: never translate text the transcription stage
+            # marked unreliable. Translating a hallucination laundered it into
+            # two more languages that looked authoritative.
+            if seg.get("translation_suppressed") or \
+                    (seg.get("quality") or {}).get("unreliable"):
+                seg["arabic"] = ""
+                n_suppressed += 1
+                continue
             if NLLB_SRC.get(seg.get("language")) == tgt:   # already Arabic
                 seg["arabic"] = seg["text"]
                 continue
@@ -75,9 +90,11 @@ def translate_segments(segments: list, cfg: dict, device: str,
                 _translate_batch(tok, model, dev, src, tgt_id, items, num_beams)
 
         free_cuda()
-        log(f"Translated {len(segments)} segment(s) to Arabic "
+        log(f"Translated {len(todo)} of {len(segments)} segment(s) to Arabic "
             f"[{model_id.split('/')[-1]}, "
-            f"{'english pivot' if use_pivot else 'native source'}].")
+            f"{'english pivot' if use_pivot else 'native source'}]"
+            + (f"; {n_suppressed} withheld as UNRELIABLE (not translated)"
+               if n_suppressed else "") + ".")
         return segments
 
     except JobCancelled:

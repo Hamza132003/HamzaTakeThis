@@ -19,6 +19,46 @@ from .utils import (log, stage, free_cuda, set_cancel_check, check_cancel,
                     JobCancelled)
 
 
+def _merge(spans: list) -> list:
+    """Merge overlapping [start, end] spans."""
+    if not spans:
+        return []
+    out = [list(spans[0])]
+    for a, b in sorted(spans)[1:]:
+        if a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+
+def _total(spans: list) -> float:
+    return float(sum(b - a for a, b in _merge(spans)))
+
+
+def _coverage(duration: float, segs: list, diar: dict) -> dict:
+    """Account for the whole recording: transcribed vs withheld vs never
+    decoded. `not_decoded_sec` is the honest measure of speech the pipeline
+    never even looked at (e.g. outside diarization gating)."""
+    transcribed = [(s["start"], s["end"]) for s in segs
+                   if not (s.get("quality") or {}).get("unreliable")]
+    withheld = [(s["start"], s["end"]) for s in segs
+                if (s.get("quality") or {}).get("unreliable")]
+    gated = [(r["start"], r["end"]) for r in (diar.get("speech_regions") or [])]
+    considered = _total(transcribed + withheld)
+    return {
+        "duration_sec": round(float(duration), 2),
+        "transcribed_sec": round(_total(transcribed), 2),
+        "withheld_unreliable_sec": round(_total(withheld), 2),
+        "diarization_gated_speech_sec": round(_total(gated), 2),
+        "not_decoded_sec": round(max(0.0, float(duration) - considered), 2),
+        "transcribed_fraction": round(
+            _total(transcribed) / float(duration), 4) if duration else 0.0,
+        "note": ("not_decoded_sec includes silence AND any speech excluded by "
+                 "diarization gating; it is not evidence that nothing was said"),
+    }
+
+
 def _rel(p, out_dir: Path) -> str:
     try:
         return str(Path(p).resolve().relative_to(out_dir.resolve())).replace("\\", "/")
@@ -203,6 +243,10 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
             },
             "diarization_exclusive_segments": diar.get("exclusive_segments", []),
             "diarization_overlap_regions": diar.get("overlap_regions", []),
+            # Every second of audio must be accounted for: transcribed,
+            # withheld as unreliable, or never decoded at all. Silence in a
+            # report must never be mistaken for "nothing was said".
+            "coverage": _coverage(dur, segs, diar),
             "num_speakers": diar["num_speakers"],
             "speakers": diar["speakers"],
             "overlap_method": spk_method,

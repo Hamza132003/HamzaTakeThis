@@ -64,8 +64,14 @@ def transcribe(audio_wavs, diar_segments: list, cfg: dict, device: str,
         forced = str(cfg.get("language", "auto")).lower()
         clip_ts = _clip_timestamps(model, cfg, speech_regions)
 
-        # Decode each candidate source; keep the one with the most real speech.
-        best = None
+        # Decode EVERY branch and keep them all. The old code picked one
+        # whole-recording winner with sum(avg_logprob * len(text)); because
+        # avg_logprob is negative that score rewards SHORTER transcripts, so a
+        # truncated or hallucinated branch could beat a longer correct one.
+        # It is deleted (see docs/BRANCH_SELECTION.md); selection now uses a
+        # duration- and confidence-based segment utility, and the losing
+        # branch is retained as evidence rather than discarded.
+        branches = []
         for wav in audio_wavs:
             y, _ = librosa.load(str(wav), sr=SR, mono=True)
             if y.size < int(0.2 * SR):
@@ -74,14 +80,22 @@ def transcribe(audio_wavs, diar_segments: list, cfg: dict, device: str,
                 candidates = [forced]
             else:
                 candidates = _detect_language(model, y, cfg, clip_ts)
-            segs, lang, score = _decode_best(model, y, candidates, cfg, clip_ts)
-            if segs and (best is None or score > best[3]):
-                best = (y, segs, lang, score)
+            segs, lang, _legacy = _decode_best(model, y, candidates, cfg, clip_ts)
+            if segs:
+                branches.append({"name": Path(wav).stem, "audio": y,
+                                 "segments": segs, "language": lang,
+                                 "utility": branch_utility(segs)})
 
-        if best is None:
+        if not branches:
             log("No intelligible speech found in any source.")
             return []
-        y, wsegs, lang, _ = best
+
+        branches.sort(key=lambda b: b["utility"], reverse=True)
+        primary, others = branches[0], branches[1:]
+        y, wsegs, lang = primary["audio"], primary["segments"], primary["language"]
+        log("Branch utilities: " + ", ".join(
+            f"{b['name']}={b['utility']:.2f}" for b in branches)
+            + f" -> primary '{primary['name']}'")
 
         eng = _decode_task(model, y, lang, "translate", cfg, clip_ts)
 
@@ -89,16 +103,25 @@ def transcribe(audio_wavs, diar_segments: list, cfg: dict, device: str,
         for w in wsegs:
             results.append(_make_segment(w, lang, diar_segments, eng))
 
+        # Cross-branch agreement: a segment corroborated by an independent
+        # branch is far less likely to be a fluent hallucination. Disagreements
+        # are exposed, never silently resolved in favour of the fluent option.
+        annotate_cross_branch_support(results, others)
+
         # Re-decode overlapped regions from each speaker's separated track.
         if speaker_tracks and overlaps:
             results = _redecode_overlaps(model, results, overlaps,
                                          speaker_tracks, lang, cfg)
 
         _flag_inconsistent(results)
+        apply_evidence_guardrail(results)
         free_cuda()
         n_flag = sum(1 for r in results if r["quality"]["flagged"])
+        n_unrel = sum(1 for r in results if r["quality"].get("unreliable"))
         log(f"Transcribed {len(results)} segment(s) [{lang}] + English"
-            + (f" ({n_flag} flagged low-confidence)" if n_flag else "") + ".")
+            + (f" ({n_flag} flagged low-confidence)" if n_flag else "")
+            + (f"; {n_unrel} withheld as UNRELIABLE (not translated)"
+               if n_unrel else "") + ".")
         return results
 
     except JobCancelled:
@@ -250,8 +273,126 @@ def _decode_task(model, y, language, task, cfg, clip_ts=None):
         return []
 
 
+UNRELIABLE_PLACEHOLDER = "[UNRELIABLE — REVIEW AUDIO]"
+
+
+def segment_utility(seg: dict) -> float:
+    """Utility of ONE decoded segment (replaces the deleted whole-file score).
+
+        U = duration * (1 + mean_word_prob) * exp(avg_logprob) * (1 - no_speech)
+
+    Properties that the old sum(avg_logprob * len(text)) lacked:
+    - monotonically NON-DECREASING in accepted speech duration, so a longer
+      correct transcript can never lose to a truncated one merely for being
+      longer;
+    - always >= 0, so adding a segment never reduces a branch's score;
+    - rewards acoustic confidence (avg_logprob, word probs) rather than
+      character count;
+    - penalises segments the model itself thinks are non-speech.
+    Uncalibrated by design: this is routing only, not a confidence claim.
+    """
+    dur = max(0.0, float(seg.get("end", 0.0)) - float(seg.get("start", 0.0)))
+    alp = float(seg.get("alp", 0.0))
+    nsp = float(seg.get("nsp", 0.0))
+    words = seg.get("words") or []
+    mean_wp = (float(np.mean([w.get("probability", 0.0) for w in words]))
+               if words else 0.5)
+    return dur * (1.0 + mean_wp) * float(np.exp(alp)) * max(0.0, 1.0 - nsp)
+
+
+def branch_utility(segments: list) -> float:
+    return float(sum(segment_utility(s) for s in segments))
+
+
+def _norm_for_compare(text: str) -> str:
+    keep = [c for c in (text or "").lower() if c.isalnum() or c.isspace()]
+    return " ".join("".join(keep).split())
+
+
+def _similar(a: str, b: str) -> float:
+    """Token overlap (Jaccard). Cheap, language-agnostic, no extra deps."""
+    ta, tb = set(_norm_for_compare(a).split()), set(_norm_for_compare(b).split())
+    if not ta or not tb:
+        return 0.0
+    return len(ta & tb) / len(ta | tb)
+
+
+def annotate_cross_branch_support(results: list, other_branches: list,
+                                  min_overlap: float = 0.30) -> None:
+    """Record, per segment, whether an INDEPENDENT branch decoded similar text
+    over the same interval. Alternatives are always retained so a disagreement
+    is visible instead of being resolved silently."""
+    for r in results:
+        support, alts = 0, []
+        for br in other_branches:
+            # Track the best TIME-OVERLAPPING segment regardless of textual
+            # similarity: a similarity of exactly 0 is a total disagreement,
+            # which is the single most important alternative to preserve.
+            best_sim, best_seg, best_ov = -1.0, None, 0.0
+            for s in br["segments"]:
+                ov = min(r["end"], s["end"]) - max(r["start"], s["start"])
+                if ov <= 0:
+                    continue
+                sim = _similar(r.get("text", ""), s.get("text", ""))
+                if (sim, ov) > (best_sim, best_ov):
+                    best_sim, best_seg, best_ov = sim, s, ov
+            if best_seg is not None:
+                alts.append({"branch": br["name"], "text": best_seg.get("text", ""),
+                             "similarity": round(max(best_sim, 0.0), 3),
+                             "start": best_seg["start"], "end": best_seg["end"]})
+                if best_sim >= min_overlap:
+                    support += 1
+        q = r.setdefault("quality", {})
+        q["cross_branch_support"] = support
+        q["branches_compared"] = len(other_branches)
+        if alts:
+            r["alternatives"] = alts
+
+
+def apply_evidence_guardrail(results: list) -> None:
+    """INTERIM evidence-safety rule (NOT calibrated confidence — Phase 6).
+
+    A segment is `unreliable` when a hallucination signature fired, or when
+    no independent branch corroborated it while its acoustic scores are weak.
+    For those segments:
+      - the displayed source text becomes UNRELIABLE_PLACEHOLDER;
+      - the original hypothesis is preserved in `text_rejected`;
+      - translations are cleared and suppressed (translation.py skips them),
+        so a hallucination is never propagated into English or Arabic;
+      - raw scores and the reason stay attached for the evidence view.
+    Nothing is deleted: the interval and the rejected text remain recorded.
+    """
+    for r in results:
+        q = r.setdefault("quality", {})
+        reasons = []
+        if q.get("flagged"):
+            reasons.append(q.get("reason") or "hallucination signature")
+        support = q.get("cross_branch_support")
+        if (support == 0 and q.get("branches_compared", 0) > 0
+                and float(q.get("avg_logprob", 0.0)) < -0.5):
+            reasons.append("no independent branch corroborated this text and "
+                           "acoustic score is weak")
+        if not reasons:
+            q["unreliable"] = False
+            continue
+        q["unreliable"] = True
+        q["unreliable_reasons"] = reasons
+        r["text_rejected"] = r.get("text", "")
+        r["english_rejected"] = r.get("english", "")
+        r["text"] = UNRELIABLE_PLACEHOLDER
+        r["english"] = ""
+        r["arabic"] = ""
+        r["translation_suppressed"] = True
+
+
 def _decode_best(model, y, candidates, cfg, clip_ts=None):
-    """Decode under each candidate language; return (segments, lang, score)."""
+    """Decode under each candidate language; return (segments, lang, score).
+
+    NOTE: the returned score is the LEGACY whole-file value and is no longer
+    used for branch selection (see segment_utility / branch_utility). It is
+    kept only so the language loop below can pick between candidate languages
+    within a single branch.
+    """
     best = None
     for lang in candidates:
         clean = _decode_task(model, y, lang, "transcribe", cfg, clip_ts)
@@ -347,9 +488,18 @@ def _redecode_overlaps(model, results: list, overlaps: list,
 
 # Signature phrases Whisper emits on music/noise instead of real speech
 # (YouTube-training artifacts). Substring match on the English, lowercase.
+# Generic video-outro phrases Whisper emits on unrelated / low-information
+# audio. Observed live on a 42 s Persian two-speaker recording, where all
+# three surviving segments were outros. Matched as substrings on the English
+# so wording variants ("subscribe to my channel", "don't forget to
+# subscribe", …) are caught, not just the exact sentences.
 _HALLUCINATION_EN = ("thank you for watching", "thanks for watching",
                      "please subscribe", "like and subscribe",
-                     "see you in the next video", "music playing")
+                     "subscribe to my channel", "subscribe to the channel",
+                     "forget to subscribe", "hit the like button",
+                     "see you in the next video", "end of this video",
+                     "end of the video", "watch other videos",
+                     "music playing")
 
 # Subtitle-credit lines Whisper invents on media audio (learned from
 # fansubbed content). Substring match on the source text.

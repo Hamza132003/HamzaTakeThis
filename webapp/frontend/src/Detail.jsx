@@ -85,6 +85,13 @@ function mergeTurns(speech) {
         text: s.text || '', english: s.english || '', arabic: s.arabic || '',
         words: s.words || [], emotion: s.emotion, sentiment: s.sentiment,
         flagged: !!s.quality?.flagged, reason: s.quality?.reason, parts: 1,
+        unreliable: !!s.quality?.unreliable,
+        unreliableReasons: s.quality?.unreliable_reasons || [],
+        rejectedText: s.text_rejected || '', rejectedEnglish: s.english_rejected || '',
+        crossSupport: s.quality?.cross_branch_support,
+        branchesCompared: s.quality?.branches_compared,
+        alternatives: s.alternatives || [],
+        rawScores: s.quality || {},
       })
     }
   }
@@ -123,7 +130,34 @@ function Turn({ t, color, viewMode, onSeek }) {
         <span className="hint">{langName(t.language)}</span>
         <span className={`chip ${sentClass(t.sentiment)}`}>{t.emotion} / {t.sentiment}</span>
         {t.flagged && <span className="chip warn" title={t.reason || ''}>⚠ low confidence</span>}
+        {t.unreliable && (
+          <span className="chip warn" title={t.unreliableReasons.join('; ')}>
+            ⛔ unreliable — not translated
+          </span>
+        )}
+        {typeof t.crossSupport === 'number' && t.branchesCompared > 0 && (
+          <span className="chip" title="independent audio branches that decoded similar text">
+            branch support: {t.crossSupport}/{t.branchesCompared}
+          </span>
+        )}
       </div>
+      {t.unreliable && (
+        <div className="hint" style={{ margin: '4px 0 6px' }}>
+          Withheld by the evidence guardrail: {t.unreliableReasons.join('; ')}.
+          {' '}Raw scores: avg_logprob={t.rawScores.avg_logprob}, {' '}
+          no_speech={t.rawScores.no_speech_prob}, {' '}
+          compression={t.rawScores.compression_ratio}.
+          {t.rejectedText && <> Rejected source: <i>{t.rejectedText}</i></>}
+          {t.rejectedEnglish && <> · Rejected English: <i>{t.rejectedEnglish}</i></>}
+        </div>
+      )}
+      {t.alternatives.length > 0 && (
+        <div className="hint" style={{ margin: '2px 0 6px' }}>
+          Other branches: {t.alternatives.map((a, i) => (
+            <span key={i}>{a.branch} (sim {a.similarity}): <i>{a.text || '—'}</i>{' '}</span>
+          ))}
+        </div>
+      )}
       {(viewMode === 'all' || viewMode === 'original') &&
         <div className={`orig ${rtl ? 'rtl ar-text' : ''}`}>{t.text}</div>}
       {(viewMode === 'all' || viewMode === 'english') && t.english &&

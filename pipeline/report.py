@@ -87,10 +87,26 @@ def _markdown(r: dict) -> str:
         L.append(f"### {spk} · {talk:.1f}s · tone: **{tone}**\n")
         for s in segs:
             lang = LANG_NAME.get(s.get("language"), s.get("language", "?"))
-            flag = " ⚠ low-confidence" if s.get("quality", {}).get("flagged") else ""
+            q = s.get("quality", {})
+            flag = " ⚠ low-confidence" if q.get("flagged") else ""
+            if q.get("unreliable"):
+                flag += " ⛔ UNRELIABLE — withheld, not translated"
             L.append(f"- **[{fmt_ts(s['start'])}–{fmt_ts(s['end'])}] "
                      f"({lang}, {s.get('emotion','?')}/{s.get('sentiment','?')})**{flag}")
             L.append(f"  - orig: {s['text']}")
+            if q.get("unreliable"):
+                L.append(f"  - withheld because: "
+                         f"{'; '.join(q.get('unreliable_reasons', []))}")
+                L.append(f"  - raw scores: avg_logprob={q.get('avg_logprob')}, "
+                         f"no_speech={q.get('no_speech_prob')}, "
+                         f"compression={q.get('compression_ratio')}")
+                if s.get("text_rejected"):
+                    L.append(f"  - rejected source (evidence): {s['text_rejected']}")
+                if s.get("english_rejected"):
+                    L.append(f"  - rejected English (evidence): {s['english_rejected']}")
+            for alt in s.get("alternatives", []):
+                L.append(f"  - alt [{alt['branch']}, sim {alt['similarity']}]: "
+                         f"{alt['text']}")
             if s.get("english"):
                 L.append(f"  - EN: {s['english']}")
             if s.get("arabic") and s.get("language") not in ("ar",):
