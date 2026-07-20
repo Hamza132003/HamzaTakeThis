@@ -23,14 +23,22 @@ from workers.diarization_worker.protocol import PROTOCOL_VERSION  # noqa: E402
 def _fake_worker(tmp_path: Path, body: str, name="fakepy") -> Path:
     """Create a fake 'interpreter': a Python script that ignores `-m module`
     and writes whatever `body` dictates. Invoked as
-    <fake> -m workers.diarization_worker.main <req> <resp>."""
+    <fake> -m workers.diarization_worker.main <req> <resp>.
+
+    Cross-platform: a .cmd shim on Windows, a /bin/sh shim elsewhere, so the
+    same tests run in Linux CI and on the Windows dev machine.
+    """
     script = tmp_path / f"{name}.py"
     script.write_text(textwrap.dedent(body), encoding="utf-8")
-    # A .cmd shim lets the client treat it as an executable interpreter.
-    shim = tmp_path / f"{name}.cmd"
-    shim.write_text(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
-                    encoding="utf-8")
-    shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
+    if os.name == "nt":
+        shim = tmp_path / f"{name}.cmd"
+        shim.write_text(f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
+                        encoding="utf-8")
+    else:
+        shim = tmp_path / f"{name}.sh"
+        shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{script}" "$@"\n',
+                        encoding="utf-8")
+    shim.chmod(shim.stat().st_mode | stat.S_IEXEC | stat.S_IRUSR)
     return shim
 
 
@@ -212,9 +220,10 @@ def test_no_orphan_process_after_timeout(tmp_path, audio):
     w = _fake_worker(tmp_path, "import time\ntime.sleep(30)\n")
     before = {p.pid for p in psutil.process_iter()}
     run_diarization(audio, "a" * 64, _cfg(w, timeout_sec=2.0))
+    # Identify survivors by command line (the shim differs per platform:
+    # .cmd on Windows, /bin/sh on POSIX), not by process name.
     leaked = [p for p in psutil.process_iter()
-              if p.pid not in before and "python" in (p.name() or "").lower()
-              and _is_our_fake(p, tmp_path)]
+              if p.pid not in before and _is_our_fake(p, tmp_path)]
     assert not leaked, f"orphaned worker processes: {leaked}"
 
 
