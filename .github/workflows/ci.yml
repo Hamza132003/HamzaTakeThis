@@ -18,7 +18,13 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install light toolchain (no model weights, no torch)
-        run: pip install pytest ruff mypy numpy pyyaml pydantic soundfile av
+        # Pinned to the versions recorded in requirements.lock.txt so CI
+        # reproduces local results; unpinned numpy previously drifted to 2.x
+        # and changed mypy stub strictness between local and CI.
+        run: >
+          pip install "pytest==9.1.1" "ruff==0.15.22" "mypy==2.3.0"
+          "numpy==1.26.4" "PyYAML==6.0.3" "pydantic==2.13.4"
+          "soundfile==0.12.1" "av==18.0.0" "scipy==1.13.1"
       - name: Lint (new code only)
         run: ruff check aegis tools tests pipeline/asr pipeline/contracts pipeline/ingest pipeline/diagnostics
       - name: Type check (new code only)

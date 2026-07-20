@@ -56,12 +56,14 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     if not mask.any():
         return []
     d = np.diff(mask.astype(np.int8))
-    starts = list(np.flatnonzero(d == 1) + 1)
-    ends = list(np.flatnonzero(d == -1) + 1)
+    # Cast to Python ints: numpy integer scalars leak into the declared
+    # tuple[int, int] contract and are rejected by stricter numpy stubs.
+    starts = [int(i) for i in np.flatnonzero(d == 1) + 1]
+    ends = [int(i) for i in np.flatnonzero(d == -1) + 1]
     if mask[0]:
         starts.insert(0, 0)
     if mask[-1]:
-        ends.append(len(mask))
+        ends.append(int(len(mask)))
     return [(s, e - s) for s, e in zip(starts, ends)]
 
 
