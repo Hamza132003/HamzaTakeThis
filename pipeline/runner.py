@@ -75,8 +75,16 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
     # 4. diarization (16 kHz)
     tick(3)
     with stage("Diarize (count speakers)"):
+        # Runs in an isolated worker process (pyannote 4 + numpy 2). The
+        # manager releases GPU residency first so ClearVoice and pyannote are
+        # never resident together on the 8 GB card.
+        src_sha = ""
+        manifest = au.get("ingest_manifest")
+        if manifest is not None:
+            src_sha = manifest.source.sha256
         diar = diarization.diarize(voice16, cfg["diarization"], device,
-                                   models=MANAGER)
+                                   models=MANAGER, audio_sha256=src_sha,
+                                   should_cancel=should_cancel, full_cfg=cfg)
     if diar.get("warning"):
         warnings.append(diar["warning"])
 
@@ -164,6 +172,23 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
             "separation_method": sep["method"],
             "sample_rate": sep.get("sample_rate", 16000),
             "diarization_method": diar["method"],
+            # Explicit, machine-readable honesty about whether real
+            # diarization ran. Never infer success from num_speakers.
+            "diarization_status": {
+                "state": diar.get("state"),
+                "genuine_pyannote": diar.get("genuine_pyannote", False),
+                "fallback_used": diar.get("fallback_used", True),
+                "failure_stage": diar.get("failure_stage"),
+                "model_id": diar.get("model_id"),
+                "model_revision": diar.get("model_revision"),
+                "pyannote_version": diar.get("pyannote_version"),
+                "device_used": diar.get("device_used"),
+                "processing_sec": diar.get("processing_sec"),
+                "peak_vram_mb": diar.get("peak_vram_mb"),
+                "worker_failures": diar.get("worker_failures", []),
+            },
+            "diarization_exclusive_segments": diar.get("exclusive_segments", []),
+            "diarization_overlap_regions": diar.get("overlap_regions", []),
             "num_speakers": diar["num_speakers"],
             "speakers": diar["speakers"],
             "overlap_method": spk_method,
