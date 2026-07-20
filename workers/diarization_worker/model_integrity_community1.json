@@ -1,0 +1,84 @@
+{
+ "schema_version": 1,
+ "model_id": "pyannote/speaker-diarization-community-1",
+ "revision": "3533c8cf8e369892e6b79ff1bf80f7b0286a54ee",
+ "last_modified": "2025-09-29T08:43:24.000Z",
+ "gated": "auto",
+ "license": "cc-by-4.0",
+ "total_bytes": 33695573,
+ "files": [
+  {
+   "path": ".gitattributes",
+   "size": 1571,
+   "sha256": null,
+   "git_oid": "7c39301dc01fe65e09b2432a27a18b4ee3e74a37",
+   "lfs": false
+  },
+  {
+   "path": "README.md",
+   "size": 9978,
+   "sha256": null,
+   "git_oid": "8356d6634d7b1074581dd36e2225887ec809326e",
+   "lfs": false
+  },
+  {
+   "path": "config.yaml",
+   "size": 444,
+   "sha256": null,
+   "git_oid": "4022db43960736338378fdb6b5a85cfdae198910",
+   "lfs": false
+  },
+  {
+   "path": "diarization.gif",
+   "size": 861445,
+   "sha256": "****************************************************************",
+   "git_oid": "114f825e4f8e854ed9ebbf06fd75feaa68d16b88",
+   "lfs": true
+  },
+  {
+   "path": "embedding/README.md",
+   "size": 938,
+   "sha256": null,
+   "git_oid": "d71f943e00016652680bef1e6c49fbc842e0d4c4",
+   "lfs": false
+  },
+  {
+   "path": "embedding/pytorch_model.bin",
+   "size": 26646242,
+   "sha256": "****************************************************************",
+   "git_oid": "6347697826a1958253dd195fa296d8d97b8f6280",
+   "lfs": true
+  },
+  {
+   "path": "plda/README.md",
+   "size": 220,
+   "sha256": null,
+   "git_oid": "5c01ad2e673203fe32a82d7a140eb817db9930b7",
+   "lfs": false
+  },
+  {
+   "path": "plda/plda.npz",
+   "size": 133852,
+   "sha256": "****************************************************************",
+   "git_oid": "e61936ef2108eccdff801c440d5e3f6c6995aba4",
+   "lfs": true
+  },
+  {
+   "path": "plda/xvec_transform.npz",
+   "size": 134376,
+   "sha256": "****************************************************************",
+   "git_oid": "b8079f30a35a68fe7d996bd7abc2170338ba6767",
+   "lfs": true
+  },
+  {
+   "path": "segmentation/pytorch_model.bin",
+   "size": 5906507,
+   "sha256": "****************************************************************",
+   "git_oid": "e3b91de5a5374fc40b556f9cc51317d280b4ea79",
+   "lfs": true
+  }
+ ],
+ "verified_utc": null,
+ "downloaded": false,
+ "note": "Integrity manifest captured BEFORE download from public HF metadata. huggingface_hub verifies LFS sha256 on fetch; verify_cache.py re-verifies afterwards."
+}
