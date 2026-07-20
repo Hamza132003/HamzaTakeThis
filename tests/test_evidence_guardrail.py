@@ -137,6 +137,36 @@ def test_known_outro_phrases_trigger_the_guardrail():
         assert r["english"] == "" and r["arabic"] == ""
 
 
+def test_inflected_channel_promo_is_caught():
+    """Regression: the substring list held the SINGULAR 'اشترك في القناة' and
+    missed the PLURAL 'اشتركوا في القناة' Whisper actually produced, so the
+    hallucination passed as a real transcript (avg_logprob -0.488 also sat
+    just above the weak-score threshold)."""
+    from pipeline.transcription import _flag_inconsistent
+    for text in ("اشتركوا في القناة", "اشترك في القناة", "اشتركو في القناة"):
+        r = {"start": 0.0, "end": 2.0, "text": text, "english": "unrelated text",
+             "quality": {"avg_logprob": -0.488}}
+        _flag_inconsistent([r])
+        apply_evidence_guardrail([r])
+        assert r["quality"]["unreliable"] is True, text
+        assert r["english"] == "" and r["arabic"] == ""
+        assert r["text_rejected"] == text          # evidence preserved
+
+
+def test_real_arabic_speech_is_not_flagged_by_the_promo_matcher():
+    """The inflection-robust matcher must not swallow ordinary speech that
+    merely mentions a channel or subscribing."""
+    from pipeline.transcription import _flag_inconsistent
+    r = {"start": 0.0, "end": 4.0,
+         "text": "القناة كانت مزدحمة بالسفن هذا الصباح",   # 'channel' as waterway
+         "english": "The channel was crowded with ships this morning",
+         "quality": {"avg_logprob": -0.2}}
+    _flag_inconsistent([r])
+    apply_evidence_guardrail([r])
+    assert r["quality"]["unreliable"] is False
+    assert r["text"].startswith("القناة")
+
+
 def test_translation_stage_skips_suppressed_segments():
     from pipeline.translation import translate_segments
     segs = [{"language": "fa", "text": UNRELIABLE_PLACEHOLDER,

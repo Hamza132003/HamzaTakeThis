@@ -507,6 +507,18 @@ _HALLUCINATION_SRC = ("توقيت وترجمة", "ترجمة نانسي", "اش�
                       "زیرنویس", "כתוביות", "subtitles by", "subtitled by",
                       "translated by")
 
+# Inflection-robust signatures: ALL terms in a group must appear somewhere in
+# the text. A plain substring list missed "اشتركوا في القناة" (plural
+# imperative) while matching only "اشترك في القناة" (singular) — observed
+# live, where the hallucination then passed as a real transcript.
+_HALLUCINATION_SRC_GROUPS = (
+    ("اشترك", "قناة"),        # subscribe … channel (any conjugation)
+    ("سبسکرایب", "کانال"),     # Persian transliteration
+    ("عضو", "کانال"),          # Persian "join the channel"
+    ("لایک", "کانال"),
+    ("ترجمة", "قناة"),
+)
+
 
 def _flag_inconsistent(results: list) -> None:
     """Flag hallucination signatures (kept visible, greyed out in the UI,
@@ -519,6 +531,9 @@ def _flag_inconsistent(results: list) -> None:
         reason = None
         if any(p in text.lower() or p in text for p in _HALLUCINATION_SRC):
             reason = "subtitle-credit hallucination"
+        elif any(all(term in text for term in group)
+                 for group in _HALLUCINATION_SRC_GROUPS):
+            reason = "channel-promo hallucination (inflection-robust match)"
         elif any(p in eng for p in _HALLUCINATION_EN):
             reason = "signature noise phrase in English"
         elif any(j in text.lower() for j in ("موسیقی", "موسيقى", "music")) and t < 30:
