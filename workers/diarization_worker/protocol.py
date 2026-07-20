@@ -34,6 +34,7 @@ FAILURE_STAGES = (
     "malformed_response",
     "no_speakers_detected",
     "cancelled",
+    "routing_unavailable",
     "audio_unreadable",
     "unknown",
 )

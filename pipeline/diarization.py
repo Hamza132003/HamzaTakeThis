@@ -5,6 +5,22 @@ numpy 2), because pyannote 4 and ClearVoice cannot share one environment —
 see docs/DIARIZATION_RUNTIME_ARCHITECTURE.md. This module never imports
 pyannote; it calls the worker through workers.diarization_worker.client.
 
+INPUT BRANCH (`diarization.input_branch`, default `raw_16k`)
+-----------------------------------------------------------
+Measured on a two-speaker fixture with an identical model, revision and
+offline path:
+
+    raw_16k       (audio_16k_mono.wav)  → 2 speakers, 2 overlap regions
+    enhanced_16k  (voice_16k.wav)       → 1 speaker,  0 overlap regions
+
+ClearVoice enhancement removes the cues pyannote needs to separate talkers,
+so diarization defaults to the raw compatibility track. Enhancement remains
+in use for transcription and for the listenable voice deliverable.
+
+There is NO silent fallback between branches: if the configured branch is
+unavailable the stage reports a structured `routing_unavailable` failure and
+degrades to the honest single-speaker fallback, exactly as any other failure.
+
 Honesty contract: `method` is `pyannote4_isolated` ONLY when the worker
 returned genuine pyannote output. Every other path reports
 `fallback_single_speaker` with a specific `failure_stage`, and the report and
@@ -12,10 +28,14 @@ UI must not describe it as successful diarization.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
 from .utils import free_cuda, log
+
+DEFAULT_INPUT_BRANCH = "raw_16k"
+SUPPORTED_INPUT_BRANCHES = ("raw_16k", "enhanced_16k")
 
 # Human-readable explanation per failure stage, surfaced in report warnings.
 _STAGE_HELP = {
@@ -37,25 +57,85 @@ _STAGE_HELP = {
     "no_speakers_detected": "the diarization model found no speaker turns",
     "cancelled": "diarization was cancelled",
     "audio_unreadable": "the diarization input audio could not be read",
+    "routing_unavailable": ("the configured diarization input branch is not "
+                            "available; no silent switch to another branch is "
+                            "performed"),
     "unknown": "diarization failed for an unclassified reason",
 }
 
 
-def diarize(voice_wav: Path, cfg: dict, device: str, models=None,
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    try:
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(8 * 1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return ""
+
+
+def resolve_input_branch(branches: dict, cfg: dict) -> tuple[str, Path | None, str | None]:
+    """(branch_name, path_or_None, error_or_None) — never substitutes a branch."""
+    name = str(cfg.get("input_branch", DEFAULT_INPUT_BRANCH)).lower().strip()
+    if name not in SUPPORTED_INPUT_BRANCHES:
+        return name, None, (
+            f"unsupported diarization.input_branch '{name}'; supported values "
+            f"are {', '.join(SUPPORTED_INPUT_BRANCHES)}")
+    path = branches.get(name)
+    if path is None:
+        return name, None, f"branch '{name}' was not produced by this pipeline run"
+    path = Path(path)
+    if not path.is_file():
+        return name, None, f"branch '{name}' file is missing: {path.name}"
+    return name, path, None
+
+
+def diarize(audio_input, cfg: dict, device: str, models=None,
             audio_sha256: str = "", should_cancel=None,
             full_cfg: dict | None = None) -> dict:
-    """Returns the legacy dict shape plus explicit status fields."""
+    """`audio_input` is either a dict of {branch_name: path} or a single path
+    (single path = legacy callers; treated as the configured branch).
+
+    Returns the legacy dict shape plus explicit status and routing fields.
+    """
+    branches = (dict(audio_input) if isinstance(audio_input, dict)
+                else {str(cfg.get("input_branch", DEFAULT_INPUT_BRANCH)).lower():
+                      audio_input})
+    # A usable path for the honest fallback even when routing itself failed.
+    any_path = next((Path(p) for p in branches.values()
+                     if p and Path(p).is_file()), None)
+
     if not cfg.get("enabled", True):
-        return _fallback(voice_wav, reason="disabled",
-                         failure_stage="disabled",
-                         warning="Speaker detection is DISABLED in the "
-                                 "configuration; everything was labeled as one "
-                                 "speaker.")
+        out = _fallback(any_path, reason="disabled", failure_stage="disabled",
+                        warning="Speaker detection is DISABLED in the "
+                                "configuration; everything was labeled as one "
+                                "speaker.")
+        out["input_branch"] = None
+        return out
+
+    branch, audio_path, routing_error = resolve_input_branch(branches, cfg)
+    if routing_error is not None:
+        # NO silent substitution: an unavailable branch is a reported failure.
+        log(f"WARNING: diarization routing failed ({routing_error}); "
+            f"falling back to single-speaker segmentation.")
+        out = _fallback(
+            any_path, reason="routing_unavailable",
+            failure_stage="routing_unavailable",
+            warning=(f"Speaker detection is DEGRADED: {routing_error}. "
+                     f"Everything was labeled as ONE speaker - this is NOT "
+                     f"real diarization."))
+        out["input_branch"] = branch
+        out["input_file"] = None
+        out["input_sha256"] = None
+        return out
 
     # Assemble the config view the client expects (diarization.* plus the
     # worker interpreter, which may be overridden per install).
     client_cfg = dict(full_cfg or {})
     client_cfg["diarization"] = dict(cfg)
+    input_sha = _sha256_file(audio_path)
+    log(f"Diarization input branch: {branch} ({audio_path.name})")
 
     token = (cfg.get("hf_token") or os.environ.get("HF_TOKEN")
              or os.environ.get("HUGGINGFACE_TOKEN") or _token_file() or None)
@@ -69,8 +149,10 @@ def diarize(voice_wav: Path, cfg: dict, device: str, models=None,
     free_cuda()
 
     from workers.diarization_worker.client import run_diarization
-    resp = run_diarization(Path(voice_wav), audio_sha256, client_cfg,
+    resp = run_diarization(audio_path, audio_sha256, client_cfg,
                            token=token, should_cancel=should_cancel)
+    routing = {"input_branch": branch, "input_file": audio_path.name,
+               "input_sha256": input_sha}
 
     if resp.genuine_pyannote and resp.state == "ok" and resp.turns:
         segments = [{"start": t["start"], "end": t["end"], "speaker": t["speaker"]}
@@ -98,6 +180,7 @@ def diarize(voice_wav: Path, cfg: dict, device: str, models=None,
             "processing_sec": resp.processing_sec,
             "peak_vram_mb": resp.peak_vram_mb,
             "warnings_worker": resp.warnings,
+            **routing,
         }
         return out
 
@@ -107,12 +190,13 @@ def diarize(voice_wav: Path, cfg: dict, device: str, models=None,
     log(f"WARNING: real diarization did NOT run ({stage}: {detail[:160]}); "
         f"falling back to single-speaker segmentation.")
     fb = _fallback(
-        voice_wav, reason=stage, failure_stage=stage,
+        audio_path, reason=stage, failure_stage=stage,
         warning=(f"Speaker detection is DEGRADED: {help_text}. Everything was "
                  f"labeled as ONE speaker - this is NOT real diarization."))
     fb["state"] = resp.state if resp.state in ("failed", "cancelled", "degraded") else "failed"
     fb["worker_failures"] = resp.failures
     fb["pyannote_version"] = resp.pyannote_version
+    fb.update(routing)
     return fb
 
 
@@ -140,21 +224,34 @@ def _speech_regions(segments: list, pad: float = 0.3) -> list:
     return [{"start": round(a, 2), "end": round(b, 2)} for a, b in merged]
 
 
-def _fallback(voice_wav: Path, reason: str, failure_stage: str | None = None,
+def _fallback(voice_wav: Path | None, reason: str,
+              failure_stage: str | None = None,
               warning: str | None = None) -> dict:
     """Split on silence, assign everything to a single speaker.
 
     This is NOT diarization. `genuine_pyannote` is always False here.
+    `voice_wav` may be None when routing failed before any audio was chosen.
     """
-    import librosa
-    y, sr = librosa.load(str(voice_wav), sr=16000, mono=True)
-    intervals = librosa.effects.split(y, top_db=30)
-    segments = [
-        {"start": round(s / sr, 2), "end": round(e / sr, 2), "speaker": "SPEAKER_00"}
-        for s, e in intervals
-    ]
-    if not segments:
-        segments = [{"start": 0.0, "end": round(len(y) / sr, 2), "speaker": "SPEAKER_00"}]
+    segments: list[dict] = []
+    load_error: str | None = None
+    if voice_wav is not None and Path(voice_wav).is_file():
+        try:
+            import librosa
+            y, sr = librosa.load(str(voice_wav), sr=16000, mono=True)
+            intervals = librosa.effects.split(y, top_db=30)
+            segments = [
+                {"start": round(s / sr, 2), "end": round(e / sr, 2),
+                 "speaker": "SPEAKER_00"}
+                for s, e in intervals
+            ]
+            if not segments:
+                segments = [{"start": 0.0, "end": round(len(y) / sr, 2),
+                             "speaker": "SPEAKER_00"}]
+        except Exception as e:
+            # The fallback itself must never take the stage down: report an
+            # empty timeline rather than raising out of the diarization stage.
+            load_error = f"{type(e).__name__}: {' '.join(str(e).split())[:150]}"
+            log(f"  (fallback segmentation could not read the audio: {load_error})")
     out = {
         "segments": segments,
         "num_speakers": 1,
@@ -168,6 +265,8 @@ def _fallback(voice_wav: Path, reason: str, failure_stage: str | None = None,
         "exclusive_segments": [],
         "overlap_regions": [],
     }
+    if load_error:
+        out["fallback_load_error"] = load_error
     if warning:
         out["warning"] = warning
     return out

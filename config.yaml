@@ -95,6 +95,17 @@ diarization:
   # be given this explicitly: a revision-pinned download populates no
   # refs/main entry, so the default ref cannot resolve offline.
   model_revision: 3533c8cf8e369892e6b79ff1bf80f7b0286a54ee
+  # Which audio branch diarization consumes:
+  #   raw_16k       audio_16k_mono.wav  - the unenhanced compatibility track
+  #   enhanced_16k  voice_16k.wav       - the ClearVoice-enhanced track
+  # DEFAULT raw_16k. Measured on a two-speaker fixture with an identical
+  # model and settings: raw_16k -> 2 speakers + 2 overlap regions;
+  # enhanced_16k -> 1 speaker, 0 overlaps. Enhancement removes the cues
+  # pyannote needs to tell talkers apart. Enhancement is still used for
+  # transcription and for the listenable voice.wav deliverable.
+  # There is no silent fallback between branches: an unavailable branch is
+  # reported as a routing failure.
+  input_branch: raw_16k
   # Worker interpreter; null = %LOCALAPPDATA%\AegisXPrime\envs\diarization
   worker_python: null
   offline: true             # worker never reaches the network by default

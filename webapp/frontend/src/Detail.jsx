@@ -186,6 +186,15 @@ export default function Detail({ name, onBack }) {
         <div className="meta">
           <span>separation: <b>{r.separation_method}</b></span>
           <span>diarization: <b>{r.diarization_method}</b></span>
+          {r.diarization_status?.input_branch && (
+            <span>diarization input: <b>{r.diarization_status.input_branch}</b>
+              {r.diarization_status.input_file
+                ? ` (${r.diarization_status.input_file})` : ''}</span>
+          )}
+          {r.diarization_status && (
+            <span>real diarization:{' '}
+              <b>{r.diarization_status.genuine_pyannote ? 'yes' : 'NO (fallback)'}</b></span>
+          )}
           <span>overlap: <b>{r.overlap_method}</b></span>
           <span>device: <b>{r.device}</b></span>
           {r.sample_rate && <span>rate: <b>{(r.sample_rate / 1000).toFixed(0)} kHz</b></span>}

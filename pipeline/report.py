@@ -23,6 +23,15 @@ def _markdown(r: dict) -> str:
     L.append(f"- **Input:** `{r['filename']}`")
     L.append(f"- **Duration:** {r['duration_sec']:.1f}s   ·   **Device:** {r['device']}")
     L.append(f"- **Speakers:** {r['num_speakers']} ({r['diarization_method']})")
+    ds = r.get("diarization_status") or {}
+    if ds:
+        L.append(
+            f"- **Diarization:** input branch `{ds.get('input_branch')}`"
+            f" (`{ds.get('input_file')}`) · real pyannote:"
+            f" **{'yes' if ds.get('genuine_pyannote') else 'NO — fallback'}**"
+            f" · overlaps: {ds.get('overlap_count', 0)}"
+            + (f" · revision `{(ds.get('model_revision') or '')[:12]}`"
+               if ds.get("model_revision") else ""))
     langs = ", ".join(LANG_NAME.get(x, x) for x in r["languages_detected"]) or "—"
     L.append(f"- **Languages:** {langs}   ·   **Setting:** {r['language_setting']}")
     L.append(f"- **Separation:** {r['separation_method']}   ·   "

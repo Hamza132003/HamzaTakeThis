@@ -78,13 +78,20 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
         # Runs in an isolated worker process (pyannote 4 + numpy 2). The
         # manager releases GPU residency first so ClearVoice and pyannote are
         # never resident together on the 8 GB card.
+        #
+        # INPUT BRANCH: diarization consumes the RAW 16 kHz audio by default.
+        # Measured on a two-speaker fixture: the ClearVoice-enhanced track
+        # collapses 2 speakers to 1 and loses every overlap region, while the
+        # raw track resolves both. Enhancement stays enabled for transcription
+        # and listening; only diarization is re-routed.
         src_sha = ""
         manifest = au.get("ingest_manifest")
         if manifest is not None:
             src_sha = manifest.source.sha256
-        diar = diarization.diarize(voice16, cfg["diarization"], device,
-                                   models=MANAGER, audio_sha256=src_sha,
-                                   should_cancel=should_cancel, full_cfg=cfg)
+        diar = diarization.diarize(
+            {"raw_16k": au["work_wav"], "enhanced_16k": voice16},
+            cfg["diarization"], device, models=MANAGER, audio_sha256=src_sha,
+            should_cancel=should_cancel, full_cfg=cfg)
     if diar.get("warning"):
         warnings.append(diar["warning"])
 
@@ -179,6 +186,13 @@ def process_file(input_path, cfg: dict, device: str, progress=None,
                 "genuine_pyannote": diar.get("genuine_pyannote", False),
                 "fallback_used": diar.get("fallback_used", True),
                 "failure_stage": diar.get("failure_stage"),
+                # Which audio branch diarization actually consumed, and the
+                # exact bytes it saw. Never inferred - always recorded.
+                "input_branch": diar.get("input_branch"),
+                "input_file": diar.get("input_file"),
+                "input_sha256": diar.get("input_sha256"),
+                "num_speakers": diar.get("num_speakers"),
+                "overlap_count": len(diar.get("overlap_regions") or []),
                 "model_id": diar.get("model_id"),
                 "model_revision": diar.get("model_revision"),
                 "pyannote_version": diar.get("pyannote_version"),
