@@ -12,7 +12,9 @@ import sys
 def main() -> int:
     report: dict = {"ok": True, "python": sys.version.split()[0], "errors": []}
 
-    def need(name: str, key: str) -> object | None:
+    def need(name: str, key: str):    # returns the module or None (untyped:
+        # these packages exist only in the worker env, so the type checker
+        # running in the main env cannot resolve their stubs)
         try:
             mod = __import__(name)
             report[key] = getattr(mod, "__version__", "unknown")

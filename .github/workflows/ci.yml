@@ -1,7 +1,9 @@
-# AEGIS-X PRIME CI — Phase 0.
-# Hard rule: NO model weights are downloaded in CI (spec §6.12). Only pip
-# packages are installed, and only the light set needed for lint/type/unit.
+# AEGIS-X PRIME CI.
+# Hard rules: NO model weights are downloaded in CI (spec §6.12), and NO
+# PyTorch is installed. Only the light pip set needed for lint/type/unit.
 # Heavy-import tests carry the `heavy` marker and run locally instead.
+# Diarization is covered here by fake worker interpreters (see
+# tests/test_diarization_client.py) — pyannote is never installed in CI.
 
 name: ci
 on:
@@ -25,8 +27,12 @@ jobs:
           pip install "pytest==9.1.1" "ruff==0.15.22" "mypy==2.3.0"
           "numpy==1.26.4" "PyYAML==6.0.3" "pydantic==2.13.4"
           "soundfile==0.12.1" "av==18.0.0" "scipy==1.13.1"
+      - name: Assert CI installs no torch and no pyannote
+        run: |
+          ! pip show torch  > /dev/null 2>&1 || (echo "torch must not be in CI" && exit 1)
+          ! pip show pyannote.audio > /dev/null 2>&1 || (echo "pyannote must not be in CI" && exit 1)
       - name: Lint (new code only)
-        run: ruff check aegis tools tests pipeline/asr pipeline/contracts pipeline/ingest pipeline/diagnostics
+        run: ruff check aegis tools tests pipeline/asr pipeline/contracts pipeline/ingest pipeline/diagnostics workers
       - name: Type check (new code only)
         run: mypy
       - name: Unit tests (light subset)
