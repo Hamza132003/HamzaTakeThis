@@ -72,7 +72,26 @@ def test_unknown_keys_rejected():
 
 
 def test_schema_version_present_and_current():
-    assert _asset().schema_version == INGEST_SCHEMA_VERSION == 1
+    # v2 (Phase 1 repair): canonical store-relative artifact paths + structured
+    # ingest failures. Bumping this constant is a deliberate, documented
+    # decision — see the module docstring and docs/INGEST.md "Schema history".
+    assert _asset().schema_version == INGEST_SCHEMA_VERSION == 2
+
+
+def test_v2_additions_present():
+    m = IngestManifest(manifest_id="m", source=_asset(),
+                       created_utc="2026-07-19T00:00:00Z")
+    assert m.store_relative_dir is None and m.failures == []
+    assert m.ok is True
+    from pipeline.contracts import IngestFailure, IngestPointer
+    f = IngestFailure(stage="probe", exception_type="RuntimeError", message="x",
+                      occurred_utc="2026-07-19T00:00:00Z")
+    assert f.recoverable is True and f.legacy_continued is True
+    p = IngestPointer(source_sha256="a" * 64, source_asset_id="src-1",
+                      store_relative_dir="sources/aa/aaa",
+                      manifest_relative_path="sources/aa/aaa/ingest_manifest.json",
+                      created_utc="2026-07-19T00:00:00Z")
+    assert p.schema_version == 2
 
 
 def test_no_calibrated_confidence_fields():

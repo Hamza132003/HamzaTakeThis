@@ -7,6 +7,8 @@ from .ingest import (  # noqa: F401
     ConditionVector,
     DerivedAudio,
     DiagnosticMeasurement,
+    IngestFailure,
     IngestManifest,
+    IngestPointer,
     MediaMetadata,
 )

@@ -1,4 +1,4 @@
-"""Ingest contracts (schema version 1).
+"""Ingest contracts (schema version 2).
 
 Rules enforced here (per approved spec §5 and Phase 1 binding requirements):
 - every persisted contract carries `schema_version`;
@@ -10,6 +10,20 @@ Rules enforced here (per approved spec §5 and Phase 1 binding requirements):
 - portable manifests reference artifacts by RELATIVE path + content hash; the
   absolute source path is retained only in `source_path_local`, explicitly
   marked non-portable (privacy: it may contain a user-profile path).
+
+SCHEMA VERSION DECISION — v1 → v2 (Phase 1 repair pass)
+Reason: canonical artifacts moved out of the (OneDrive-synced) recording output
+tree into the non-synced artifact store, and ingest failures became structured.
+Changes:
+- `DerivedAudio.rel_path` is now relative to the CANONICAL SOURCE DIRECTORY in
+  the artifact store (was: relative to the recording output directory);
+- `IngestManifest.store_relative_dir` added (store-root-relative canonical dir);
+- `IngestManifest.failures` / `IngestFailure` added;
+- `IngestManifest.analysis_block_frames` / `analysis_policy` added;
+- `IngestPointer` added (small portable file left in the output directory).
+Migration: v1 manifests remain readable by pinning `schema_version=1` at the
+call site; no automatic rewrite is performed, and no v1 manifest is deleted.
+See docs/INGEST.md "Schema history".
 """
 from __future__ import annotations
 
@@ -17,7 +31,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-INGEST_SCHEMA_VERSION = 1
+INGEST_SCHEMA_VERSION = 2
 
 
 class _Contract(BaseModel):
@@ -96,7 +110,8 @@ class DerivedAudio(_Contract):
     role: str                              # e.g. "channel_0" | "mono_mix" | "mid"
     transform: str                         # exact transform + scaling convention
     tool: str                              # e.g. "ffmpeg 7.x (imageio-ffmpeg)" | "numpy"
-    rel_path: str                          # RELATIVE to the manifest directory
+    rel_path: str                          # v2: RELATIVE to the canonical source
+                                           # dir in the artifact store
     sha256: str
     byte_size: int
     created_utc: str
@@ -131,6 +146,20 @@ class CategoricalCondition(_Contract):
     thresholds_version: str
 
 
+class IngestFailure(_Contract):
+    """Structured record of one ingest-stage failure. Never a bare log line:
+    `ingest_manifest=None` must not be the only machine-readable signal."""
+    stage: Literal["hash", "store", "probe", "channels", "diagnostics",
+                   "manifest_write", "pointer_write", "unknown"]
+    exception_type: str
+    message: str                           # sanitized; never secrets/env dumps
+    occurred_utc: str
+    source_content_id: Optional[str] = None
+    recoverable: bool = True               # False → evidence-grade ingest void
+    legacy_continued: bool = True          # legacy transcript path still ran
+    warnings: list[str] = Field(default_factory=list)
+
+
 class IngestManifest(_Contract):
     """Top-level record tying source → derived assets → diagnostics."""
     manifest_id: str
@@ -139,7 +168,31 @@ class IngestManifest(_Contract):
     condition_vector: Optional[ConditionVector] = None
     tool_versions: dict[str, str] = Field(default_factory=dict)
     created_utc: str
+    # v2 additions
+    store_relative_dir: Optional[str] = None   # e.g. "sources/ab/abcd…"
+    stages_completed: list[str] = Field(default_factory=list)
+    failures: list[IngestFailure] = Field(default_factory=list)
+    analysis_block_frames: Optional[int] = None   # bounded-memory block size
+    analysis_policy: Optional[str] = None         # human-readable policy note
     warnings: list[str] = Field(default_factory=list)
+    failure_reason: Optional[str] = None          # summary of `failures`
+
+    @property
+    def ok(self) -> bool:
+        return not self.failures and self.failure_reason is None
+
+
+class IngestPointer(_Contract):
+    """Small portable file left in the recording output directory pointing at
+    the canonical manifest in the artifact store. Deliberately contains NO
+    absolute path: the store root is resolved from configuration at read time,
+    so the pointer stays portable and leaks no user-profile path."""
+    source_sha256: str
+    source_asset_id: str
+    store_relative_dir: str                # resolve against storage.artifact_dir
+    manifest_relative_path: str            # e.g. "sources/ab/abcd…/ingest_manifest.json"
+    created_utc: str
+    ok: bool = True
     failure_reason: Optional[str] = None
 
 
